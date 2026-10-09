@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import urllib.request
 import zipfile
+import requests
 
 ARCHIVE_URL = ('https://buckeyemailosu-my.sharepoint.com/:u:/g/personal/chen_8336_osu_edu/'
                'IQB870QrmuqwS5Ck33cHpJfkAVt3LsMeariREIwP3AT7byA?download=1')
@@ -19,8 +20,11 @@ def download(url, target):
         return
     temp = target.with_suffix(target.suffix + '.partial')
     print('Downloading', target.name, flush=True)
-    with urllib.request.urlopen(url, timeout=60) as response, temp.open('wb') as out:
-        shutil.copyfileobj(response, out, 1024*1024)
+    with requests.Session() as session:
+        with session.get(url, stream=True, timeout=(30, 120)) as response, temp.open('wb') as out:
+            response.raise_for_status()
+            for chunk in response.iter_content(1024*1024):
+                out.write(chunk)
     temp.replace(target)
 
 
