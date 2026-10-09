@@ -417,6 +417,12 @@ class Runner:
         return tag
 
     def panel(self, tasks, strategy, phase, repeats=3):
+        plan = {'tasks': list(tasks), 'repeats': repeats, 'strategy_sha256': sha(strategy),
+                'config_sha256': self.config_hash}
+        plan_path = self.root / 'panels' / f'{phase}.json'
+        if plan_path.exists() and read(plan_path) != plan:
+            raise ValueError('Panel identity changed during resume')
+        write(plan_path, plan)
         results = []
         for repeat in range(1, repeats+1):
             for task in tasks:
@@ -652,17 +658,23 @@ def report(runner):
     phases = {}
     for phase in sorted({r['phase'] for r in rows}):
         panel = [r for r in rows if r['phase'] == phase]
+        plan_path = runner.root / 'panels' / f'{phase}.json'
+        plan = read(plan_path) if plan_path.exists() else None
+        expected_tasks = plan['tasks'] if plan else sorted({r['task'] for r in panel})
+        expected_repeats = range(1, plan['repeats']+1) if plan else sorted({r['repeat'] for r in panel})
         rates = []
-        for repeat in sorted({r['repeat'] for r in panel}):
+        for repeat in expected_repeats:
             group = [r for r in panel if r['repeat'] == repeat]
             known = [r for r in group if r['success'] is not None or r['state'] in ('task_failed', 'budget_exhausted')]
-            rates.append({'repeat': repeat, 'planned': len(group), 'known': len(known),
+            rates.append({'repeat': repeat, 'planned': len(expected_tasks), 'known': len(known),
                           'successes': sum(r['success'] or 0 for r in known),
                           'success_rate': sum(r['success'] or 0 for r in known)/len(known) if known else None})
         values = [r['success_rate'] for r in rates if r['known'] == r['planned'] and r['success_rate'] is not None]
         phases[phase] = {'rounds': rates, 'mean': statistics.mean(values) if values else None,
                          'sample_sd': statistics.stdev(values) if len(values) > 1 else None,
                          'states': dict(Counter(r['state'] for r in panel)),
+                         'execution_valid_rate': sum(r['valid'] or 0 for r in panel)/len(panel) if panel else None,
+                         'elapsed_attempt_seconds': sum((r['ended'] or time.time())-r['started'] for r in panel),
                          'complete': all(r['known'] == r['planned'] for r in rates)}
     result = {'phases': phases, 'technical_missingness_preserved': True,
               'primary_metric': 'mean of independent-run success rates; no best-of-three',
