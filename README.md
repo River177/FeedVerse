@@ -8,7 +8,9 @@
 
 ## 当前状态
 
-项目初始化完成，尚未实现任务运行器或启动 benchmark 实验。已有接入背景、证据位置与评测边界见 [HANDOFF.md](HANDOFF.md)。交接文档中的环境状态是历史记录，需要重新核验。
+已实现可配置的远端 AGH 运行器、OAuth 网关、独立评分、策略候选验证与五轮进化流程。执行与研究协议见 [docs/experiment-protocol.md](docs/experiment-protocol.md)。运行状态以远端 SQLite、评分回执和本地哈希核验备份为准。
+
+已有接入背景与证据位置见 [HANDOFF.md](HANDOFF.md)。交接文档中的环境状态是历史记录；当前方案为本地开发、远端实验，总预算不设上限，验证后自动启动完整实验。
 
 ## 目录
 
@@ -19,4 +21,4 @@
 - `docs/`：环境检查和开发说明。
 - `runs/`：本地运行产物，默认不提交。
 
-下一步是检查本地环境，再实现可配置的 AGH/TRAPI 接入与最小工具闭环。
+`src/rsi.py` 提供 `run`、`evaluate`、`improve`、`evolve`、`all`、`report` 和 `status`。使用方法、隔离边界、来源分组、接受规则与备份流程见实验协议。

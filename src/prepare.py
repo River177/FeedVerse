@@ -80,7 +80,7 @@ def prepare(config, build=True):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     dockerfile = module.get_dockerfile_base('linux/amd64', 'x86_64')
-    # Avoid defaults-channel ToS prompts in unattended builds; package bounds remain upstream's.
+    # Prefer conda-forge; package bounds remain upstream's.
     dockerfile = dockerfile.replace('conda config --append channels conda-forge',
                                    'conda config --remove channels defaults && conda config --add channels conda-forge')
     context = root / 'control' / 'image'
@@ -90,7 +90,7 @@ def prepare(config, build=True):
         subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '-t', config['image'], str(context)], check=True)
         image = subprocess.check_output(['docker', 'image', 'inspect', config['image'], '--format', '{{.Id}}'], text=True).strip()
         manifest.update({'image_id': image, 'dockerfile_sha256': hashfile(context / 'Dockerfile'),
-                         'environment_patch': 'conda-forge-only channels; upstream package constraints unchanged'})
+                         'environment_patch': 'conda-forge preferred; upstream package constraints unchanged'})
         (assets / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     print(json.dumps({'task_count': len(rows), 'benchmark_path': str(benchmark),
                       'archive_sha256': manifest['archive_sha256']}, indent=2), flush=True)

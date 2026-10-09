@@ -15,23 +15,23 @@ from azure.identity import AzureCliCredential, ChainedTokenCredential, ManagedId
 def connect(path):
     db = sqlite3.connect(path, timeout=30)
     db.execute('PRAGMA journal_mode=WAL')
-    db.execute('CREATE TABLE IF NOT EXISTS keys (hash TEXT PRIMARY KEY, attempt TEXT, cap INTEGER)')
+    db.execute("CREATE TABLE IF NOT EXISTS keys (hash TEXT PRIMARY KEY, attempt TEXT, cap INTEGER, scope TEXT DEFAULT 'task')")
     db.execute('''CREATE TABLE IF NOT EXISTS requests (
         id TEXT PRIMARY KEY, attempt TEXT, started REAL, ended REAL,
         status TEXT, http_status INTEGER, response_id TEXT, usage TEXT, error TEXT)''')
     return db
 
 
-def register(path, key, attempt, cap):
+def register(path, key, attempt, cap, scope='task'):
     with connect(path) as db:
-        db.execute('INSERT INTO keys VALUES (?,?,?)', (hashlib.sha256(key.encode()).hexdigest(), attempt, cap))
+        db.execute('INSERT INTO keys VALUES (?,?,?,?)', (hashlib.sha256(key.encode()).hexdigest(), attempt, cap, scope))
 
 
-def reserve(path, key):
+def reserve(path, key, scope='task'):
     with connect(path) as db:
         db.execute('BEGIN IMMEDIATE')
-        row = db.execute('SELECT attempt,cap FROM keys WHERE hash=?',
-                         (hashlib.sha256(key.encode()).hexdigest(),)).fetchone()
+        row = db.execute('SELECT attempt,cap FROM keys WHERE hash=? AND scope=?',
+                         (hashlib.sha256(key.encode()).hexdigest(), scope)).fetchone()
         if not row:
             raise PermissionError('Unknown attempt credential')
         attempt, cap = row
@@ -74,7 +74,7 @@ def serve(config):
 
         def key(self):
             header = self.headers.get('Authorization', '')
-            return header[7:] if header.startswith('Bearer ') else ''
+            return header[7:] if header.startswith('Bearer ') else self.headers.get('api-key', '')
 
         def valid(self):
             with connect(database) as db:
@@ -100,8 +100,10 @@ def serve(config):
             self.reply(404, {'error': {'message': 'Unknown route'}})
 
         def do_POST(self):
-            if self.path != '/v1/responses':
-                return self.reply(404, {'error': {'message': 'Only Responses supported'}})
+            judge_path = f"/openai/deployments/{config['judge_deployment']}/chat/completions"
+            judge = self.path.split('?')[0] == judge_path
+            if self.path != '/v1/responses' and not judge:
+                return self.reply(404, {'error': {'message': 'Unknown model route'}})
             request_id = None
             headers_sent = False
             try:
@@ -109,13 +111,16 @@ def serve(config):
                 if not 0 < length <= 8 * 1024 * 1024:
                     return self.reply(413, {'error': {'message': 'Invalid request size'}})
                 body = json.loads(self.rfile.read(length))
-                if body.get('model') != config['model']:
+                if not judge and body.get('model') != config['model']:
                     return self.reply(400, {'error': {'message': 'Frozen model mismatch'}})
-                request_id = reserve(database, self.key())
-                body['model'] = config['deployment']
-                body['max_output_tokens'] = config['max_output_tokens']
+                request_id = reserve(database, self.key(), 'judge' if judge else 'task')
+                body['model'] = config['judge_deployment'] if judge else config['deployment']
+                if not judge:
+                    body['max_output_tokens'] = config['max_output_tokens']
                 token = credential.get_token('api://trapi/.default').token
-                with requests.post(upstream, params={'api-version': config['api_version']},
+                endpoint = (f"https://trapi.research.microsoft.com/{config['instance']}/openai/deployments/{config['judge_deployment']}/chat/completions"
+                            if judge else upstream)
+                with requests.post(endpoint, params={'api-version': config['judge_api_version'] if judge else config['api_version']},
                     headers={'Authorization': 'Bearer ' + token, 'x-ms-client-request-id': request_id},
                     json=body, stream=True, timeout=(20, 300)) as response:
                     self.send_response(response.status_code)
@@ -144,6 +149,12 @@ def serve(config):
                     else:
                         data = response.json()
                         state, rid, usage = data.get('status', 'missing_completion'), data.get('id'), data.get('usage')
+                        if judge:
+                            state = 'completed' if len(data.get('choices', [])) == body.get('n', 1) else 'missing_choices'
+                            if usage:
+                                usage = {'input_tokens': usage.get('prompt_tokens', 0),
+                                         'output_tokens': usage.get('completion_tokens', 0),
+                                         'total_tokens': usage.get('total_tokens', 0)}
                         self.wfile.write(json.dumps(data).encode())
                     finish(database, request_id, state, response.status_code, rid, usage)
                     self.close_connection = True

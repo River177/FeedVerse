@@ -8,6 +8,7 @@ import sys
 task = json.loads(Path('/control/task.json').read_text())
 os.chdir('/testbed')
 sys.path.insert(0, '/testbed')
+sys.path.insert(0, '/official')
 script = Path('/testbed/benchmark/eval_programs') / task['eval_script_name']
 spec = importlib.util.spec_from_file_location('official_task_evaluator', script)
 module = importlib.util.module_from_spec(spec)

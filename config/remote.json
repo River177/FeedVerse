@@ -8,6 +8,8 @@
   "deployment": "gpt-6-astra_2026-09-03",
   "model": "gpt-6-astra",
   "api_version": "2025-04-01-preview",
+  "judge_deployment": "gpt-4o_2024-11-20",
+  "judge_api_version": "2024-10-21",
   "thinking": "low",
   "context_window": 32768,
   "max_output_tokens": 4096,

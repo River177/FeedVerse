@@ -348,13 +348,33 @@ class Runner:
             grade_control = path / 'grading'
             grade_control.mkdir(exist_ok=True)
             write(grade_control / 'task.json', task)
+            grade_workspace = path / 'grading-inputs'
+            grade_workspace.mkdir(exist_ok=True)
+            # Do not let generated Python modules shadow evaluator dependencies.
+            output_root = Path(task['output_fname']).parts[0]
+            sources = (workspace / output_root).rglob('*') if (workspace / output_root).is_dir() else [output]
+            for source in sources:
+                if source.is_file() and not source.is_symlink() and source.suffix not in ('.py','.pyc','.so','.pth'):
+                    target = grade_workspace / source.relative_to(workspace)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, target)
             name = 'rsi-grade-' + uuid.uuid4().hex[:12]
-            args = ['docker', 'run', '--rm', '--name', name, '--network', 'none', '--cap-drop=ALL',
+            judge_key = secrets.token_urlsafe(32)
+            judge_attempt = attempt + '-judge'
+            register(self.usage_db, judge_key, judge_attempt, 10, 'judge')
+            args = ['docker', 'run', '--rm', '--name', name, '--network', 'host', '--cap-drop=ALL',
                     '--security-opt=no-new-privileges', '--memory', '24g', '--cpus', '8',
-                    '-v', f'{workspace}:/testbed:ro', '-v', f'{self.benchmark}:/testbed/benchmark:ro',
+                    '-v', f'{grade_workspace}:/testbed:ro', '-v', f'{self.benchmark}:/testbed/benchmark:ro',
+                    '-v', f'{self.root}/assets/ScienceAgentBench:/official:ro',
                     '-v', f'{grade_control}:/control', '-v', f'{self.release}/src/grade.py:/grade.py:ro',
+                    '-e', 'OPENAI_API_KEY=', '-e', f'AZURE_OPENAI_KEY={judge_key}',
+                    '-e', f"AZURE_OPENAI_ENDPOINT=http://127.0.0.1:{self.config['port']}",
+                    '-e', f"AZURE_OPENAI_API_VERSION={self.config['judge_api_version']}",
+                    '-e', f"AZURE_OPENAI_DEPLOYMENT_NAME={self.config['judge_deployment']}",
                     image, 'python', '/grade.py']
             rc = self.command(args, path / 'grading.log', self.config['eval_timeout_seconds'])
+            self.revoke(judge_attempt)
+            write(path / 'judge-usage.json', self.usage(judge_attempt))
             if rc == 124:
                 subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
             result = read(grade_control / 'grade.json') if (grade_control / 'grade.json').exists() else {
@@ -419,21 +439,29 @@ class Runner:
 
     def feedback(self, panel):
         package = []
+        grouped = defaultdict(list)
         for row in panel:
+            grouped[row['task']].append(row)
+        for task, rows in sorted(grouped.items()):
+            row = next((r for r in rows if r['success'] != 1), rows[0])
             if row['state'] not in ('evaluated', 'task_failed', 'budget_exhausted'):
                 continue
             entry = {'task_id': row['task'], 'attempt_id': row['id'], 'success': row['success'],
-                     'state': row['state'], 'public_failure_category': row['error']}
+                     'state': row['state'], 'public_failure_category': row['error'],
+                     'three_run_successes': sum(r['success'] or 0 for r in rows)}
             # Agent-owned commands are public; evaluator logs/expected values are never forwarded.
             trace = Path(row['path']) / 'control' / 'permissions.jsonl'
             if trace.exists():
                 commands = []
                 for line in trace.read_text().splitlines():
                     call = json.loads(line).get('toolCall', {})
-                    title = str(call.get('title', ''))[:500]
+                    title = str(call.get('title', ''))[:180]
                     if not re.search('token|credential|authorization|bridge.key', title, re.I):
                         commands.append(title)
-                entry['public_agent_commands'] = commands[-12:]
+                entry['public_agent_commands'] = commands[-4:]
+            execution_log = Path(row['path']) / 'execution.log'
+            if execution_log.exists():
+                entry['public_execution_tail'] = execution_log.read_text(errors='replace')[-500:]
             package.append(entry)
         return package
 
@@ -460,6 +488,30 @@ class Runner:
             return parsed
         finally:
             self.revoke(attempt)
+
+    def validate_judge(self):
+        result_path = self.root / 'control' / 'judge-smoke.json'
+        if result_path.exists() and read(result_path).get('passed'):
+            return
+        attempt = 'judge-smoke-' + uuid.uuid4().hex[:12]
+        key = secrets.token_urlsafe(32)
+        register(self.usage_db, key, attempt, 4, 'judge')
+        args = ['docker','run','--rm','--network','host','--cap-drop=ALL',
+            '-v',f'{self.root}/assets/ScienceAgentBench:/official:ro',
+            '-v',f'{self.benchmark}:/benchmark:ro','-v',f'{self.root}/control:/control',
+            '-v',f'{self.release}/src/judge_smoke.py:/judge-smoke.py:ro',
+            '-e','OPENAI_API_KEY=','-e',f'AZURE_OPENAI_KEY={key}',
+            '-e',f"AZURE_OPENAI_ENDPOINT=http://127.0.0.1:{self.config['port']}",
+            '-e',f"AZURE_OPENAI_API_VERSION={self.config['judge_api_version']}",
+            '-e',f"AZURE_OPENAI_DEPLOYMENT_NAME={self.config['judge_deployment']}",
+            self.image,'python','/judge-smoke.py']
+        try:
+            rc = self.command(args, self.root / 'control/judge-smoke.log', 360)
+            if rc != 0 or not result_path.exists() or not read(result_path).get('passed'):
+                raise RuntimeError('Official visual Judge validation failed')
+        finally:
+            self.revoke(attempt)
+            write(self.root / 'reports/judge-validation-usage.json',self.usage(attempt))
 
     def improve(self, strategy, panel, iteration):
         feedback = self.feedback(panel)
@@ -531,10 +583,14 @@ def run_all(runner):
                 'initial_strategy_sha256': sha(runner.release / 'strategy/initial.md')}
     if protocol_path.exists() and read(protocol_path) != protocol:
         raise ValueError('Frozen protocol differs; start a separate experiment root')
-    write(protocol_path, protocol)
+    split_path = root / 'split_manifest.json'
+    if split_path.exists() and read(split_path) != protocol['split']:
+        raise ValueError('Task split differs after pilot exposure')
+    write(split_path, protocol['split'])
     smoke = runner.attempt(0, runner.release / 'strategy/initial.md', 'smoke', 1, smoke=True)
     if smoke['state'] != 'submitted' or not read(Path(smoke['path']) / 'smoke_check.json')['passed']:
         raise RuntimeError('Smoke validation failed')
+    runner.validate_judge()
     initial = runner.release / 'strategy/initial.md'
     # All calibration attempts belong to development. No score-based task selection.
     for repeat in range(1, config['pilot_attempts']+1):
@@ -544,6 +600,7 @@ def run_all(runner):
             raise RuntimeError('Pilot infrastructure validation failed')
     write(root / 'reports/pilot-validation.json', {'passed': True, 'budget_total': None,
                                                  'batch_authorized_by_user': True})
+    write(protocol_path, protocol)
     dev, holdout = protocol['split']['development'], protocol['split']['holdout']
     current = initial
     panel = runner.panel(dev, current, 'development-initial')

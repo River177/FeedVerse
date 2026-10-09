@@ -28,6 +28,8 @@ class ProtocolTests(unittest.TestCase):
                 reserve(db, 'private-test-key')
             with self.assertRaises(PermissionError):
                 reserve(db, 'invalid-key')
+            with self.assertRaises(PermissionError):
+                reserve(db, 'private-test-key', 'judge')
             with connect(db) as connection:
                 self.assertNotIn('private-test-key', str(connection.execute('SELECT * FROM keys').fetchall()))
 
