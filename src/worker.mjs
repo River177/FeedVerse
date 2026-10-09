@@ -6,7 +6,7 @@ const cfg = JSON.parse(await readFile('/control/input.json', 'utf8'));
 const sdk = await import(pathToFileURL(`${cfg.agh_source}/packages/sdk/src/index.node.ts`).href);
 await mkdir('/control/home/profiles/local-dev', {recursive:true});
 await writeFile('/control/home/profiles/local-dev/profile.yaml',
-  `name: local-dev\nschemaVersion: 1\npresets: { default: ${cfg.preset}, allowed: [${cfg.preset}] }\ncomputerUse: { enabled: false }\n`);
+  `name: local-dev\nschemaVersion: 1\npresets: { default: ${cfg.preset}, allowed: [${cfg.preset}] }\ncomputerUse: { enabled: false }\npolicy:\n  capabilityCeiling: [tools, hooks, slots, events, resources, ui, network, network.publicRead, tools.invoke, artifacts]\n  workspacePackages: deny\n`);
 const daemon = spawn('node', [`${cfg.agh_source}/packages/cli/dist/local/daemon.mjs`,
   '--home', '/control/home', '--profile', 'local-dev', '--workspace', '/workspace'],
   {stdio: ['ignore', 'inherit', 'inherit'], env: {...process.env, AGH_HOME: '/control/home'}});

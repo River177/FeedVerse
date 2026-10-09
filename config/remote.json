@@ -28,5 +28,5 @@
   "total_budget": null,
   "batch_authorized": true,
   "knowledge": true,
-  "preset": "minimal-rl"
+  "preset": "standard"
 }

@@ -23,7 +23,9 @@ and 30 minutes. Missing usage and absent actual price data remain explicit.
 The task Agent is a single AGH session inside Docker, with only its workspace, selected public
 dataset directories, AGH installation and its own control/home files mounted. It never receives
 reference programs, evaluation scripts, rubrics, other tasks or host OAuth credentials. The AGH
-`minimal-rl` preset disables subagents; the external strategy is the only evolved artifact.
+`standard` preset runs inside the Docker boundary; a fixed profile excludes the `subagent`
+capability and denies workspace packages, so the subagent extension is not admitted. The external
+strategy is the only evolved artifact.
 The worker grants one-time approvals inside that container, never persistent/global approvals.
 
 After submission, a separate container independently runs the hashed program against task data,
