@@ -264,7 +264,8 @@ class Runner:
         name = 'rsi-' + uuid.uuid4().hex[:16]
         print(json.dumps({'event': 'attempt_started', 'attempt': attempt}), flush=True)
         args = self.docker(workspace, name, 'host') + mounts + self.worker_mounts(path)
-        args += [self.image, '/opt/node/bin/node', '/runner/worker.mjs']
+        args += [self.image, '/opt/node/bin/node', '--import',
+                 f"{self.config['agh_source']}/node_modules/tsx/dist/loader.mjs", '/runner/worker.mjs']
         rc = self.command(args, path / 'worker.log', self.config['task_timeout_seconds'] + 90)
         if rc == 124:
             subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
