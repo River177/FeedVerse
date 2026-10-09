@@ -1,9 +1,12 @@
 // Runs INSIDE an attempt-specific Docker container; no hidden evaluator mounts.
-import {readFile, writeFile, appendFile, stat} from 'node:fs/promises';
+import {readFile, writeFile, appendFile, stat, mkdir} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 const cfg = JSON.parse(await readFile('/control/input.json', 'utf8'));
 const sdk = await import(pathToFileURL(`${cfg.agh_source}/packages/sdk/src/index.node.ts`).href);
+await mkdir('/control/home/profiles/local-dev', {recursive:true});
+await writeFile('/control/home/profiles/local-dev/profile.yaml',
+  `name: local-dev\nschemaVersion: 1\npresets: { default: ${cfg.preset}, allowed: [${cfg.preset}] }\ncomputerUse: { enabled: false }\n`);
 const daemon = spawn('node', [`${cfg.agh_source}/packages/cli/dist/local/daemon.mjs`,
   '--home', '/control/home', '--profile', 'local-dev', '--workspace', '/workspace'],
   {stdio: ['ignore', 'inherit', 'inherit'], env: {...process.env, AGH_HOME: '/control/home'}});
