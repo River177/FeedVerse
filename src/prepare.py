@@ -60,7 +60,10 @@ def prepare(config, build=True):
             for member in z.infolist():
                 if Path(member.filename).is_absolute() or '..' in Path(member.filename).parts:
                     raise ValueError('Unsafe archive path')
-            z.extractall(extracted, pwd=b'scienceagentbench')
+            if shutil.which('unzip'):
+                subprocess.run(['unzip', '-q', '-o', '-P', 'scienceagentbench', str(archive), '-d', str(extracted)], check=True)
+            else:
+                z.extractall(extracted, pwd=b'scienceagentbench')
         (extracted / '.extracted').write_text(hashfile(archive))
     candidates = list(extracted.rglob('eval_programs'))
     if len(candidates) != 1:

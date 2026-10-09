@@ -2,6 +2,7 @@
 import argparse
 from collections import Counter, defaultdict
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -157,21 +158,63 @@ class Runner:
         return {'requests': rows, 'totals': dict(total),
                 'missing_usage': sum(r['usage'] is None for r in rows), 'price_source': None}
 
+    def publish(self, path, task=None):
+        destination = self.root / 'exports' / path.name
+        destination.mkdir(parents=True, exist_ok=True)
+        candidates = list(path.glob('*.json')) + list(path.glob('*.log')) + list(path.glob('solution.py'))
+        for name in ('session.json','turn.json','error.json','trace.jsonl','permissions.jsonl'):
+            candidate = path / 'control' / name
+            if candidate.exists():
+                candidates.append(candidate)
+        for source in candidates:
+            target = destination / source.relative_to(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        if task:
+            source = path / 'independent' / task['output_fname']
+            if source.is_file() and not source.is_symlink():
+                target = destination / 'output' / source.name
+                target.parent.mkdir(exist_ok=True)
+                shutil.copyfile(source, target)
+        write(destination / 'FILES.json', {str(f.relative_to(destination)): sha(f)
+            for f in destination.rglob('*') if f.is_file() and f.name not in ('FILES.json','FILES.json.tmp')})
+
+    def publish_reports(self):
+        destination = self.root / 'exports' / 'reports'
+        destination.mkdir(parents=True, exist_ok=True)
+        for name in ('protocol.json','final-strategy.json','completion.json'):
+            source = self.root / name
+            if source.exists():
+                shutil.copyfile(source, destination / name)
+        if (self.root / 'reports').exists():
+            shutil.copytree(self.root / 'reports', destination / 'results', dirs_exist_ok=True)
+        if (self.root / 'strategies').exists():
+            shutil.copytree(self.root / 'strategies', destination / 'strategies', dirs_exist_ok=True)
+        write(destination / 'FILES.json', {str(f.relative_to(destination)): sha(f)
+            for f in destination.rglob('*') if f.is_file() and f.name not in ('FILES.json','FILES.json.tmp')})
+
     def attempt(self, task_id, strategy, phase, repeat, smoke=False):
         task = self.tasks.get(task_id) if not smoke else None
         strategy = Path(strategy)
         strategy_hash = sha(strategy)
         identity = object_hash([task_id, strategy_hash, self.config_hash, phase, repeat])
-        old = self.db.execute('SELECT * FROM attempts WHERE identity=?', (identity,)).fetchone()
+        base_identity = identity
+        old = self.db.execute('SELECT * FROM attempts WHERE identity=? OR identity LIKE ? ORDER BY started DESC LIMIT 1',
+                              (identity, identity + ':retry%')).fetchone()
         if old:
-            if old['state'] in ('submitted', 'evaluated', 'task_failed', 'budget_exhausted', 'infra_error'):
+            if old['state'] in ('submitted', 'evaluated', 'task_failed', 'budget_exhausted'):
                 return dict(old)
-            # Crash-safe: no guessing that a partial session completed.
-            self.db.execute('UPDATE attempts SET state=?,error=?,ended=? WHERE id=?',
-                            ('infra_error', 'interrupted_attempt_requires_explicit_retry', time.time(), old['id']))
-            self.db.commit()
-            self.revoke(old['id'])
-            return dict(self.db.execute('SELECT * FROM attempts WHERE id=?', (old['id'],)).fetchone())
+            if old['state'] == 'running':
+                # Preserve interrupted receipts; never reuse their partial files.
+                self.db.execute('UPDATE attempts SET state=?,error=?,ended=? WHERE id=?',
+                                ('infra_error', 'interrupted_attempt', time.time(), old['id']))
+                self.db.commit()
+                self.revoke(old['id'])
+            retries = self.db.execute('SELECT COUNT(*) FROM attempts WHERE identity LIKE ?',
+                                      (base_identity + ':retry%',)).fetchone()[0]
+            if old['error'] == 'auth_error' or retries >= 2:
+                return dict(self.db.execute('SELECT * FROM attempts WHERE id=?', (old['id'],)).fetchone())
+            identity = base_identity + f':retry{retries+1}'
         attempt = f'{phase}-t{task_id}-r{repeat}-{uuid.uuid4().hex[:10]}'
         path = self.root / 'runs' / attempt
         workspace = path / 'workspace'
@@ -261,6 +304,7 @@ class Runner:
         self.db.execute('UPDATE attempts SET state=?,error=?,ended=? WHERE id=?', (state, error, time.time(), attempt))
         self.db.commit()
         print(json.dumps({'event': 'attempt_finished', 'attempt': attempt, 'state': state, 'error': error}), flush=True)
+        self.publish(path)
         return dict(self.db.execute('SELECT * FROM attempts WHERE id=?', (attempt,)).fetchone())
 
     def evaluate(self, attempt):
@@ -282,8 +326,15 @@ class Runner:
             destination = workspace / 'benchmark' / 'datasets' / folder
             destination.mkdir(parents=True, exist_ok=True)
             mounts += ['-v', f'{self.benchmark}/datasets/{folder}:/workspace/benchmark/datasets/{folder}:ro']
+        image = self.instance_image(path, task)
+        if image is None:
+            self.db.execute('UPDATE attempts SET state=?,error=?,ended=? WHERE id=?',
+                            ('infra_error', 'dependency_build_failed', time.time(), attempt))
+            self.db.commit()
+            self.publish(path)
+            return dict(self.db.execute('SELECT * FROM attempts WHERE id=?', (attempt,)).fetchone())
         name = 'rsi-exec-' + uuid.uuid4().hex[:12]
-        args = self.docker(workspace, name) + mounts + [self.image, 'python', 'solution.py']
+        args = self.docker(workspace, name) + mounts + [image, 'python', 'solution.py']
         rc = self.command(args, path / 'execution.log', self.config['eval_timeout_seconds'])
         if rc == 124:
             subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
@@ -302,7 +353,7 @@ class Runner:
                     '--security-opt=no-new-privileges', '--memory', '24g', '--cpus', '8',
                     '-v', f'{workspace}:/testbed:ro', '-v', f'{self.benchmark}:/testbed/benchmark:ro',
                     '-v', f'{grade_control}:/control', '-v', f'{self.release}/src/grade.py:/grade.py:ro',
-                    self.image, 'python', '/grade.py']
+                    image, 'python', '/grade.py']
             rc = self.command(args, path / 'grading.log', self.config['eval_timeout_seconds'])
             if rc == 124:
                 subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
@@ -317,9 +368,33 @@ class Runner:
                         (state, result['success'], int(valid), None if state == 'evaluated' else result.get('error_type'),
                          time.time(), attempt))
         self.db.commit()
+        subprocess.run(['docker', 'image', 'rm', image], capture_output=True)
         print(json.dumps({'event': 'evaluation_finished', 'attempt': attempt, 'state': state,
                           'success': result['success']}), flush=True)
+        self.publish(path, task)
         return dict(self.db.execute('SELECT * FROM attempts WHERE id=?', (attempt,)).fetchone())
+
+    def instance_image(self, path, task):
+        context = path / 'image-build'
+        context.mkdir(exist_ok=True)
+        repo = self.root / 'assets/ScienceAgentBench'
+        spec = importlib.util.spec_from_file_location('official_dockerfiles', repo / 'evaluation/harness/dockerfiles.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        name = 'pred_' + task['gold_program_name']
+        shutil.copyfile(path / 'solution.py', context / name)
+        shutil.copyfile(repo / 'config_conda_env.py', context / 'config_conda_env.py')
+        # Credentials are injected at runtime, never baked into an image.
+        dockerfile = module.get_dockerfile_instance('linux/amd64', self.config['image'], name)
+        (context / 'Dockerfile').write_text(dockerfile)
+        tag = 'agh-rsi-attempt:' + path.name.lower()
+        rc = self.command(['docker', 'build', '-t', tag, str(context)], path / 'dependency-build.log', 1800)
+        if rc != 0:
+            return None
+        image_id = subprocess.check_output(['docker', 'image', 'inspect', tag, '--format', '{{.Id}}'], text=True).strip()
+        write(path / 'environment.json', {'image_id': image_id, 'dockerfile_sha256': sha(context / 'Dockerfile'),
+                                          'base_image_id': self.image})
+        return tag
 
     def panel(self, tasks, strategy, phase, repeats=3):
         results = []
@@ -330,8 +405,16 @@ class Runner:
                     raise RuntimeError('Authentication failed; queue stopped without relogin/model substitution')
                 if row['state'] == 'submitted':
                     row = self.evaluate(row['id'])
+                # At most two clean retries for technical failures, never for a scored failure.
+                for _ in range(2):
+                    if row['state'] != 'infra_error' or row['error'] == 'auth_error':
+                        break
+                    row = self.attempt(task, strategy, phase, repeat)
+                    if row['state'] == 'submitted':
+                        row = self.evaluate(row['id'])
                 results.append(row)
         write(self.root / 'reports' / f'{phase}.json', results)
+        self.publish_reports()
         return results
 
     def feedback(self, panel):
@@ -412,6 +495,8 @@ def success_counts(panel):
     coverage = defaultdict(set)
     complete = True
     for row in panel:
+        if row['repeat'] in coverage[row['task']]:
+            complete = False
         coverage[row['task']].add(row['repeat'])
         if row['state'] == 'evaluated' and row['success'] in (0, 1):
             counts[row['task']] += row['success']
@@ -419,7 +504,7 @@ def success_counts(panel):
             counts[row['task']] += 0
         else:
             complete = False
-    complete = complete and all(len(r) == 3 for r in coverage.values())
+    complete = complete and bool(coverage) and all(r == {1,2,3} for r in coverage.values())
     return counts, complete
 
 
@@ -462,6 +547,8 @@ def run_all(runner):
     dev, holdout = protocol['split']['development'], protocol['split']['holdout']
     current = initial
     panel = runner.panel(dev, current, 'development-initial')
+    if not success_counts(panel)[1]:
+        raise RuntimeError('Development baseline has technical missingness; evolution paused')
     for iteration in range(1, config['iterations']+1):
         receipt = root / 'reports' / f'iteration-{iteration}.json'
         if receipt.exists():
@@ -485,18 +572,26 @@ def run_all(runner):
         verdict.update({'accepted': verdict['eligible'], 'candidate': str(candidate),
                         'previous_strategy': str(current), 'iteration': iteration})
         write(receipt, verdict)
+        runner.publish_reports()
         if verdict['accepted']:
             current, panel = candidate, candidate_panel
     write(root / 'final-strategy.json', {'path': str(current), 'sha256': sha(current)})
-    runner.panel(holdout, initial, 'holdout-initial')
-    runner.panel(holdout, current, 'holdout-final')
+    initial_test = runner.panel(holdout, initial, 'holdout-initial')
+    final_test = runner.panel(holdout, current, 'holdout-final')
     report(runner)
+    if not success_counts(initial_test)[1] or not success_counts(final_test)[1]:
+        raise RuntimeError('Holdout technical missingness; report saved but experiment incomplete')
     write(root / 'completion.json', {'state': 'complete', 'ended': time.time(),
                                      'final_strategy_sha256': sha(current)})
+    runner.publish_reports()
 
 
 def report(runner):
-    rows = [dict(r) for r in runner.db.execute('SELECT * FROM attempts ORDER BY started')]
+    all_rows = [dict(r) for r in runner.db.execute('SELECT * FROM attempts ORDER BY started')]
+    latest = {}
+    for row in all_rows:
+        latest[row['task'], row['strategy'], row['phase'], row['repeat']] = row
+    rows = list(latest.values())
     phases = {}
     for phase in sorted({r['phase'] for r in rows}):
         panel = [r for r in rows if r['phase'] == phase]
@@ -513,7 +608,8 @@ def report(runner):
                          'states': dict(Counter(r['state'] for r in panel)),
                          'complete': all(r['known'] == r['planned'] for r in rates)}
     result = {'phases': phases, 'technical_missingness_preserved': True,
-              'primary_metric': 'mean of independent-run success rates; no best-of-three'}
+              'primary_metric': 'mean of independent-run success rates; no best-of-three',
+              'all_attempt_states': dict(Counter(r['state'] for r in all_rows))}
     split = read(runner.root / 'protocol.json')['split']
     if {'holdout-initial', 'holdout-final'} <= phases.keys() and all(phases[p]['complete'] for p in ('holdout-initial', 'holdout-final')):
         a = {(r['task'], r['repeat']): r['success'] or 0 for r in rows if r['phase'] == 'holdout-initial'}
@@ -537,6 +633,7 @@ def report(runner):
     result['tokens'] = {k: sum(u.get(k,0) for u in usage) for k in ('input_tokens','output_tokens','total_tokens')}
     result['actual_dollar_cost'] = None
     write(runner.root / 'reports/summary.json', result)
+    runner.publish_reports()
     print(json.dumps(result, indent=2), flush=True)
 
 
