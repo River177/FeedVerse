@@ -64,7 +64,8 @@ def inspect_event(event):
 def serve(config):
     database = Path(config['root']) / 'control' / 'usage.sqlite'
     database.parent.mkdir(parents=True, exist_ok=True)
-    connect(database).close()
+    with connect(database) as db:
+        db.execute("UPDATE requests SET status='interrupted_unknown',ended=? WHERE status='in_flight'", (time.time(),))
     credential = ChainedTokenCredential(AzureCliCredential(), ManagedIdentityCredential())
     upstream = f"https://trapi.research.microsoft.com/{config['instance']}/openai/responses"
 

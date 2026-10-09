@@ -163,7 +163,7 @@ class Runner:
         destination = self.root / 'exports' / path.name
         destination.mkdir(parents=True, exist_ok=True)
         candidates = list(path.glob('*.json')) + list(path.glob('*.log')) + list(path.glob('solution.py'))
-        for name in ('session.json','turn.json','error.json','trace.jsonl','permissions.jsonl'):
+        for name in ('session.json','turn.json','error.json','trace.jsonl','permissions.jsonl','prompt.txt'):
             candidate = path / 'control' / name
             if candidate.exists():
                 candidates.append(candidate)
@@ -255,6 +255,8 @@ class Runner:
                       + '\n\nData tree:\n' + task['dataset_folder_tree']
                       + '\n\nPreview:\n' + (task.get('dataset_preview') or '')
                       + '\n\nExecution strategy:\n' + strategy.read_text())
+        (control / 'prompt.txt').write_text(prompt)
+        metadata['prompt_sha256'] = sha(control / 'prompt.txt')
         key = secrets.token_urlsafe(32)
         register(self.usage_db, key, attempt, self.config['task_request_limit'])
         write(control / 'input.json', {**{k: self.config[k] for k in (
@@ -295,7 +297,7 @@ class Runner:
         else:
             error = 'worker_or_gateway_error'
         if smoke and state == 'submitted':
-            output = read(workspace / 'result.json')
+            output = read(workspace / 'result.json') if (workspace / 'result.json').is_file() else None
             expected = {'count': 3, 'mean_temperature_c': 12, 'sample_sd_temperature_c': 2}
             if output != expected:
                 state, error = 'task_failed', 'independent_smoke_check_failed'
@@ -313,7 +315,12 @@ class Runner:
         row = dict(self.db.execute('SELECT * FROM attempts WHERE id=?', (attempt,)).fetchone())
         if row['state'] == 'evaluated':
             return row
-        if row['state'] != 'submitted':
+        if row['state'] == 'infra_error' and (Path(row['path']) / 'solution.py').exists():
+            # Re-evaluate the SAME hashed submission after evaluator infrastructure repair.
+            old_receipt = Path(row['path']) / 'evaluation.json'
+            if old_receipt.exists():
+                shutil.copyfile(old_receipt, old_receipt.with_name(f'evaluation.failed-{uuid.uuid4().hex[:8]}.json'))
+        elif row['state'] != 'submitted':
             return row
         task = self.tasks[row['task']]
         path = Path(row['path'])
@@ -352,6 +359,7 @@ class Runner:
             write(grade_control / 'task.json', task)
             grade_workspace = path / 'grading-inputs'
             grade_workspace.mkdir(exist_ok=True)
+            (grade_workspace / 'benchmark').mkdir(exist_ok=True)
             # Do not let generated Python modules shadow evaluator dependencies.
             output_root = Path(task['output_fname']).parts[0]
             sources = (workspace / output_root).rglob('*') if (workspace / output_root).is_dir() else [output]
@@ -384,6 +392,7 @@ class Runner:
                 'success': None, 'evaluation_valid': False, 'error_type': 'grading_process_error'}
             result['valid_program'] = True
         result.update({'program_sha256': identity['program_sha256'],
+                       'evaluation_adapter_deployment': read(self.release / 'DEPLOYMENT.json'),
                        'official_evaluator_sha256': sha(self.benchmark / 'eval_programs' / task['eval_script_name'])})
         write(path / 'evaluation.json', result)
         state = 'evaluated' if result['evaluation_valid'] else 'infra_error'
@@ -396,6 +405,27 @@ class Runner:
                           'success': result['success']}), flush=True)
         self.publish(path, task)
         return dict(self.db.execute('SELECT * FROM attempts WHERE id=?', (attempt,)).fetchone())
+
+    def reusable_pilot(self, repeat):
+        """Calibration may survive infrastructure-only adapter repairs before protocol freeze."""
+        for old in self.db.execute("SELECT * FROM attempts WHERE task=3 AND phase='pilot' AND repeat=? AND state='evaluated' ORDER BY started", (repeat,)):
+            for release in (self.root / 'releases').iterdir():
+                deployment = release / 'DEPLOYMENT.json'
+                cfg_path = release / 'config/remote.json'
+                if not deployment.exists() or not cfg_path.exists() or read(cfg_path) != self.config:
+                    continue
+                old_hash = object_hash({'config': self.config, 'manifest': self.manifest,
+                                        'release': deployment.read_text()})
+                if old_hash != old['config']:
+                    continue
+                if sha(release / 'src/worker.mjs') != sha(self.release / 'src/worker.mjs'):
+                    continue
+                if sha(release / 'src/grade.py') != sha(self.release / 'src/grade.py'):
+                    continue
+                if old['strategy'] != sha(self.release / 'strategy/initial.md'):
+                    continue
+                return dict(old)
+        return None
 
     def instance_image(self, path, task):
         context = path / 'image-build'
@@ -524,6 +554,12 @@ class Runner:
             write(self.root / 'reports/judge-validation-usage.json',self.usage(attempt))
 
     def improve(self, strategy, panel, iteration):
+        directory = self.root / 'strategies' / f'candidate-{iteration}'
+        candidate = directory / 'strategy.md'
+        if candidate.exists() and (directory / 'review.json').exists():
+            if read(directory / 'review.json').get('allowed') is not True:
+                raise ValueError('Stored candidate has no positive policy review')
+            return candidate
         feedback = self.feedback(panel)
         prompt = ('You improve a GENERAL scientific execution strategy. Propose ONE shared failure cause and '
                   'ONE minimal, general instruction to append. Do not include task-specific solutions, '
@@ -541,13 +577,11 @@ class Runner:
             'execution instruction, contains no task-specific answer, hidden target, evaluation threshold or '
             'reference implementation. Return JSON {"allowed": true/false, "reason": "..."}.\n'
             + json.dumps(proposal), f'review-{iteration}')
-        directory = self.root / 'strategies' / f'candidate-{iteration}'
         directory.mkdir(parents=True, exist_ok=True)
         write(directory / 'proposal.json', proposal)
         write(directory / 'review.json', review)
         if review.get('allowed') is not True:
             return None
-        candidate = directory / 'strategy.md'
         candidate.write_text(Path(strategy).read_text() + '\n\n## Refinement\n' + proposal['change'] + '\n')
         return candidate
 
@@ -604,12 +638,13 @@ def run_all(runner):
     initial = runner.release / 'strategy/initial.md'
     # All calibration attempts belong to development. No score-based task selection.
     for repeat in range(1, config['pilot_attempts']+1):
-        row = runner.attempt(3, initial, 'pilot', repeat)
+        row = runner.reusable_pilot(repeat) or runner.attempt(3, initial, 'pilot', repeat)
         row = runner.evaluate(row['id']) if row['state'] == 'submitted' else row
         if row['state'] != 'evaluated':
             raise RuntimeError('Pilot infrastructure validation failed')
     write(root / 'reports/pilot-validation.json', {'passed': True, 'budget_total': None,
-                                                 'batch_authorized_by_user': True})
+                                                 'batch_authorized_by_user': True,
+                                                 'calibration_reuse': 'identical config, worker, strategy and official evaluator; deployment recorded per attempt'})
     write(protocol_path, protocol)
     dev, holdout = protocol['split']['development'], protocol['split']['holdout']
     current = initial

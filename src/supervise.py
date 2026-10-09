@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import sqlite3
 import subprocess
 import time
 import urllib.request
@@ -28,6 +29,10 @@ def main():
     try:
         state['stage'] = 'preflight'
         write(control / 'supervisor.json', state)
+        database = control / 'runs.sqlite'
+        if database.exists():
+            with sqlite3.connect(database) as db:
+                db.execute("UPDATE attempts SET state='infra_error',error='supervisor_interrupted',ended=? WHERE state='running'", (time.time(),))
         actual = subprocess.check_output(['git','-C',config['agh_source'],'rev-parse','HEAD'], text=True).strip()
         if actual != config['agh_commit']:
             raise RuntimeError('AGH commit mismatch')
