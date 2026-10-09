@@ -28,6 +28,9 @@ runs/*
 data/
 benchmark/
 downloads/
+assets/
+control/
+exports/
 *.log
 
 # Editor and OS files

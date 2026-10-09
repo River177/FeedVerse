@@ -7,8 +7,11 @@ import subprocess
 import time
 
 
-def sync(destination):
+def sync(destination, snapshot=None):
     destination.mkdir(parents=True, exist_ok=True)
+    if snapshot:
+        subprocess.run(['ssh','-o','BatchMode=yes','gcr-a100',
+            '/datadisk/agh-rsi/venv/bin/python',snapshot,'/datadisk/agh-rsi'],check=True)
     subprocess.run(['rsync', '-a', 'gcr-a100:/datadisk/agh-rsi/exports/', str(destination) + '/'], check=True)
     verified = 0
     for manifest in destination.glob('*/FILES.json'):
@@ -31,10 +34,11 @@ if __name__ == '__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--destination',default=str(Path(__file__).resolve().parents[1]/'runs'/'remote-backup'))
     parser.add_argument('--watch',action='store_true')
+    parser.add_argument('--snapshot',help='Pinned remote snapshot.py path, independent of the experiment deployment')
     args=parser.parse_args()
     while True:
         try:
-            print(json.dumps({'verified_files':sync(Path(args.destination))}),flush=True)
+            print(json.dumps({'verified_files':sync(Path(args.destination),args.snapshot)}),flush=True)
         except Exception as error:
             print(json.dumps({'error':type(error).__name__,'message':str(error)}),flush=True)
             if not args.watch:
