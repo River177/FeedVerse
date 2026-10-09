@@ -1,5 +1,5 @@
 // Runs INSIDE an attempt-specific Docker container; no hidden evaluator mounts.
-import {readFile, writeFile, appendFile, mkdir} from 'node:fs/promises';
+import {readFile, writeFile, appendFile, stat} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 const cfg = JSON.parse(await readFile('/control/input.json', 'utf8'));
@@ -11,7 +11,12 @@ let client;
 try {
   let owner;
   for (let i=0; i<120; i++) {
-    try {owner=JSON.parse(await readFile('/control/home/data/daemon/owner.json','utf8')); break;}
+    try {
+      const candidate=JSON.parse(await readFile('/control/home/data/daemon/owner.json','utf8'));
+      if (!(await stat(candidate.socketPath)).isSocket()) throw new Error('socket_not_ready');
+      owner=candidate;
+      break;
+    }
     catch {if (daemon.exitCode!==null) throw new Error('daemon_start_failed'); await new Promise(r=>setTimeout(r,250));}
   }
   if (!owner) throw new Error('daemon_socket_timeout');
