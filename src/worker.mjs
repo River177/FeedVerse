@@ -39,9 +39,14 @@ try {
   });
   session.onPermissionRequest(async request=>{
     const call=JSON.stringify(request.toolCall);
+    const tool=request.toolCall._meta?.['ai.agnes.harness']?.tool ?? request.toolCall.title ?? '';
     // The container is the OS boundary. Never grant persistent approvals.
-    let allow=!/subagent|computer_use|web_fetch/i.test(call);
-    if(cfg.smoke) allow=call.includes('"command":"python3 solution.py"') || request.toolCall.title==='python3 solution.py';
+    let allow=!/^(subagent|computer_use|web_fetch)/i.test(tool);
+    if(cfg.smoke) {
+      const raw=request.toolCall.rawInput ?? {};
+      const fileWrite=['write','edit'].includes(tool) && ['solution.py','/workspace/solution.py'].includes(raw.path);
+      allow=fileWrite || raw.command==='python3 solution.py' || request.toolCall.title==='python3 solution.py';
+    }
     await appendFile('/control/permissions.jsonl',JSON.stringify({toolCall:request.toolCall,allowed:allow})+'\n');
     return {verdict:allow?'allowed-once':'rejected'};
   });
