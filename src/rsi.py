@@ -128,6 +128,7 @@ class Runner:
 
     def docker(self, workspace, name, network='none'):
         return ['docker', 'run', '--name', name, '--rm', '--network', network,
+                '--user', f'{os.getuid()}:{os.getgid()}',
                 '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit', '512',
                 '--memory', '24g', '--cpus', '8', '-v', f'{workspace}:/workspace', '-w', '/workspace']
 
@@ -136,7 +137,7 @@ class Runner:
         return ['-v', f"{cfg['agh_source']}:{cfg['agh_source']}:ro",
                 '-v', f"{cfg['node_root']}:/opt/node:ro", '-v', f'{path}/control:/control',
                 '-v', f'{self.release}/src/worker.mjs:/runner/worker.mjs:ro',
-                '-e', 'PATH=/opt/node/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                '-e', 'PATH=/control/home/.local/bin:/opt/node/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                 '-e', 'AGH_HOME=/control/home', '-e', 'HOME=/control/home',
                 '-e', 'PYTHONUNBUFFERED=1', '-e', 'OMP_NUM_THREADS=4']
 
@@ -363,6 +364,7 @@ class Runner:
             judge_attempt = attempt + '-judge'
             register(self.usage_db, judge_key, judge_attempt, 10, 'judge')
             args = ['docker', 'run', '--rm', '--name', name, '--network', 'host', '--cap-drop=ALL',
+                    '--user', f'{os.getuid()}:{os.getgid()}',
                     '--security-opt=no-new-privileges', '--memory', '24g', '--cpus', '8',
                     '-v', f'{grade_workspace}:/testbed:ro', '-v', f'{self.benchmark}:/testbed/benchmark:ro',
                     '-v', f'{self.root}/assets/ScienceAgentBench:/official:ro',
@@ -503,6 +505,7 @@ class Runner:
         key = secrets.token_urlsafe(32)
         register(self.usage_db, key, attempt, 4, 'judge')
         args = ['docker','run','--rm','--network','host','--cap-drop=ALL',
+            '--user',f'{os.getuid()}:{os.getgid()}',
             '-v',f'{self.root}/assets/ScienceAgentBench:/official:ro',
             '-v',f'{self.benchmark}:/benchmark:ro','-v',f'{self.root}/control:/control',
             '-v',f'{self.release}/src/judge_smoke.py:/judge-smoke.py:ro',
