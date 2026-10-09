@@ -1,0 +1,36 @@
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.azure/
+.agh/
+.agh-home/
+local/
+config/*.local.*
+
+# Dependencies and build outputs
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime artifacts and benchmark data
+runs/*
+!runs/.gitkeep
+data/
+benchmark/
+downloads/
+*.log
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
