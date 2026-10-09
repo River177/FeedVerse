@@ -3,7 +3,7 @@
   "agh_source": "/datadisk/agh-astra-smoke/agnes-harness",
   "agh_commit": "a39272bb6bcb3109584e1bd3abac595789ae365d",
   "node_root": "/datadisk/agh-astra-smoke/runtime/node-v24.10.0-linux-x64",
-  "python": "/home/v-wuhao1/miniforge3/envs/ctx2skill-trapi/bin/python",
+  "python": "/datadisk/agh-rsi/venv/bin/python",
   "instance": "redmond/interactive",
   "deployment": "gpt-6-astra_2026-09-03",
   "model": "gpt-6-astra",
