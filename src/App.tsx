@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown,
   ArrowRight,
   ArrowUpRight,
   AudioLines,
-  BookOpen,
   Check,
   CheckCheck,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
-  Command,
   Download,
   FlaskConical,
   GitBranch,
@@ -24,14 +21,11 @@ import {
   Play,
   RefreshCw,
   Search,
-  Settings2,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   Square,
   Target,
   Users,
-  WandSparkles,
   X,
 } from "lucide-react";
 import {
@@ -57,12 +51,12 @@ import {
   Avatar,
   Brand,
   CreatorDetail,
+  CreatorComparisonTable,
   Delta,
   Dialog,
   EventLog,
   GoalLabel,
   METRICS,
-  Num,
   Sparkline,
   WorldMap,
   WorldPanel,
@@ -86,6 +80,7 @@ type SavedRun = {
   passed: boolean;
 };
 type Modal =
+  | "algorithm"
   | "settings"
   | "help"
   | "history"
@@ -138,7 +133,7 @@ function initialEvents(exp: Experiment): ToolEvent[] {
     {
       id: 1,
       tool: "create_world",
-      title: "一个世界，两种可能",
+      title: "初始化合成数据",
       description: `已建立 ${exp.world.settings.users} 位用户、${exp.world.settings.creators} 位创作者的本地世界。`,
       status: "done",
       args: exp.world.settings,
@@ -147,8 +142,8 @@ function initialEvents(exp: Experiment): ToolEvent[] {
     {
       id: 2,
       tool: "fork_world",
-      title: "从同一起点，分出另一条路",
-      description: "用户、内容、随机事件保持一致，为推荐规则创建对照分支。",
+      title: "创建对照分支",
+      description: "分支沿用相同样本和随机种子，仅修改推荐规则。",
       status: "done",
       args: { world_id: exp.world.id },
       result: {
@@ -159,7 +154,7 @@ function initialEvents(exp: Experiment): ToolEvent[] {
     {
       id: 3,
       tool: "simulate",
-      title: "两个世界已准备好，开始观察吧",
+      title: "计算两组模拟轨迹",
       description: `已计算 ${exp.world.settings.rounds} 轮轨迹。拖动时间轴，或点击一位创作者。`,
       status: "done",
       args: { rounds: exp.world.settings.rounds, policy: exp.policy },
@@ -273,7 +268,7 @@ export default function App() {
 
   function openModal(next: Modal) {
     if (busy && next === "settings") {
-      notice("请先停止探索，再调整实验参数。");
+      notice("请先停止实验，再修改配置。");
       return;
     }
     setPlaying(false);
@@ -349,7 +344,7 @@ export default function App() {
         e.status === "running" ? { ...e, status: "cancelled" } : e,
       ),
     );
-    notice("探索已停止，已完成的本地结果已保留。");
+    notice("执行已停止，已有结果已保留。");
   }
 
   async function explore() {
@@ -360,7 +355,7 @@ export default function App() {
     setValidation(null);
     setExplored(false);
     setFrame(0);
-    setStage("观察现状");
+    setStage("读取基线");
     const call = async <T,>(
       tool: string,
       title: string,
@@ -392,21 +387,21 @@ export default function App() {
     try {
       await call(
         "inspect_world",
-        "先看看，机会流向了哪里",
+        "读取基线指标",
         "读取基线的曝光分布和用户反馈，确认目标对应的指标。",
         { world_id: world.id, goal: goal.id, user_note: goal.prompt },
         () => baseline.frames.at(-1)!.metrics,
       );
-      setStage("创建实验分支");
+      setStage("创建分支");
       const twin = await call(
         "fork_world",
-        "保留起点，只改变规则",
-        "从同一世界创建实验分支，让两组结果可直接比较。",
+        "创建对照分支",
+        "从同一世界创建分支，让两组结果可直接比较。",
         { world_id: world.id, seed: settings.seed },
         () => forkWorld(world),
         (w) => ({ world_id: w.id, seed: w.settings.seed }),
       );
-      setStage("尝试更大胆的探索");
+      setStage("运行方案 A");
       const firstPolicy = {
         exploration: 0.35,
         newcomerBoost: 0.08,
@@ -414,15 +409,15 @@ export default function App() {
       };
       await call(
         "set_policy",
-        "第一种方案：多给一些探索机会",
+        "设置方案 A",
         "演示控制器先尝试较高的探索比例，观察它的收益与代价。",
         firstPolicy,
         () => ({ policy: firstPolicy, applied_to: twin.id }),
       );
       const first = await call(
         "simulate",
-        `让世界向前运行 ${settings.rounds} 轮`,
-        "计算真实模拟轨迹，观察新作者曝光与满意度的变化。",
+        `运行模拟： ${settings.rounds} 轮`,
+        "计算真实模拟轨迹，观察新作者曝光与反馈得分的变化。",
         { world_id: twin.id, rounds: settings.rounds },
         () => simulate(twin, firstPolicy),
         (data) => ({
@@ -434,7 +429,7 @@ export default function App() {
       setFrame(settings.rounds);
       const firstResult = await call(
         "compare_worlds",
-        "机会增加了吗？代价是什么？",
+        "比较方案 A 与基线",
         "用事先设置的两个约束检查结果。未达标的方案也保留记录。",
         {
           metric: goal.metric,
@@ -445,9 +440,9 @@ export default function App() {
       );
       saveHistory(
         { world, baseline, branch: first, policy: firstPolicy },
-        "探索方案 A",
+        "方案 A",
       );
-      setStage("调整推荐策略");
+      setStage("设置方案 B");
       const secondPolicy =
         goal.id === "balance"
           ? { exploration: 0.1, newcomerBoost: 0.3, diversity: 0.18 }
@@ -456,9 +451,7 @@ export default function App() {
             : { ...DEFAULT_POLICY };
       await call(
         "set_policy",
-        firstResult.passed
-          ? "再试一个更克制的方案"
-          : "调整：降低探索，定向扶持",
+        firstResult.passed ? "设置方案 B" : "设置方案 B",
         firstResult.passed
           ? "在满足约束的基础上比较另一种参数组合。"
           : "降低随机探索，用逐渐衰减的扶持权重帮助新作者进入推荐。",
@@ -472,7 +465,7 @@ export default function App() {
       );
       const second = await call(
         "simulate",
-        "重新运行相同的世界",
+        "运行方案 B",
         "用户和内容保持相同，重新计算另一组推荐规则。",
         { seed: settings.seed, rounds: settings.rounds },
         () => simulate(twin, secondPolicy),
@@ -483,8 +476,8 @@ export default function App() {
       );
       const secondResult = await call(
         "compare_worlds",
-        "核对目标，记录结果",
-        "分别判断曝光目标与满意度约束，不将单项改善视为全部达标。",
+        "检查方案 B 的约束",
+        "分别判断曝光目标与反馈得分约束，不将单项改善视为全部达标。",
         {
           metric: goal.metric,
           target: goal.target,
@@ -498,12 +491,12 @@ export default function App() {
           : { world, baseline, branch: first, policy: firstPolicy };
       setExperiment(final);
       setFrame(settings.rounds);
-      saveHistory(final, "探索方案 B");
-      setStage("换一个种子，再验证一次");
+      saveHistory(final, "方案 B");
+      setStage("使用新种子复验");
       const seed = settings.seed + 37 > 999999 ? 37 : settings.seed + 37;
       const check = await call(
         "simulate + compare_worlds",
-        "换一个起点，结果还成立吗？",
+        "使用新种子复验",
         "在另一个随机世界复验同一策略；这只是一次复验，不代表统计显著。",
         { seed, policy: final.policy, goal: goal.id },
         () => {
@@ -524,10 +517,10 @@ export default function App() {
       );
       setValidation(check);
       setExplored(true);
-      notice("演示探索完成。所有指标均来自本地计算，可展开工具记录核验。");
+      notice("演示实验已完成，结果与调用详情已保存。");
     } catch (error) {
       if (token === operation.current)
-        notice(error instanceof Error ? error.message : "探索出现问题");
+        notice(error instanceof Error ? error.message : "执行失败");
     } finally {
       if (token === operation.current) {
         setBusy(false);
@@ -553,8 +546,8 @@ export default function App() {
       if ((selected ?? 0) >= draft.settings.creators) setSelected(null);
       addEvent(
         "set_policy + simulate",
-        "手动调整，重新计算",
-        "已按新的世界设置和策略参数重新计算两个对照世界。",
+        "更新配置并重新计算",
+        "已按新的样本与运行设置和策略参数重新计算两个对照世界。",
         { settings: draft.settings, policy: draft.policy },
         next.branch.frames.at(-1)!.metrics,
         next.branch.durationMs + next.baseline.durationMs,
@@ -648,20 +641,18 @@ export default function App() {
           >
             <CircleHelp size={20} />
           </button>
-          <div className="profile-dot">
-            F<span />
-          </div>
+          <span className="sidebar-version">v0.1</span>
         </div>
       </aside>
       <div className="main-shell">
         <header className="topbar">
           <div className="brand-wordmark">
-            FeedVerse<span>LAB</span>
+            FeedVerse<span>实验台</span>
           </div>
           <div className="header-divider" />
           <div className="breadcrumb">
             工作空间 <ChevronRight size={12} />
-            <span>推荐平行世界</span>
+            <span>推荐实验</span>
           </div>
           <div className="topbar-actions">
             <button
@@ -682,7 +673,7 @@ export default function App() {
             </button>
             <span className="local-status">
               <span className="status-dot" />
-              本地模拟引擎
+              本地原型
             </span>
             <button className="header-button" onClick={exportRun}>
               <Download size={14} />
@@ -702,12 +693,12 @@ export default function App() {
             <div>
               <div className="eyebrow">
                 <span className="eyebrow-line" />
-                RECOMMENDATION OBSERVATORY
+                实验工作区
               </div>
               <h1>
-                改变规则，看见另一种可能<span className="heading-dot">.</span>
+                冷启动曝光实验<span className="experiment-state">规则原型</span>
               </h1>
-              <p>同一个世界，不同的推荐。探索好内容如何被看见。</p>
+              <p>比较基线与实验分支的曝光分配、反馈得分和内容覆盖。</p>
             </div>
             <button
               className="secondary-button setup-button"
@@ -721,12 +712,12 @@ export default function App() {
 
           <section className="goal-panel">
             <div className="goal-icon">
-              <Sparkles size={22} />
+              <SlidersHorizontal size={22} />
             </div>
             <div className="goal-content">
               <label htmlFor="goal-input">
-                给这个世界一个目标
-                <span className="goal-label-en">YOUR NEXT WHAT IF</span>
+                实验备注
+                <span className="goal-label-en"></span>
               </label>
               <div className="goal-input-row">
                 <input
@@ -738,7 +729,7 @@ export default function App() {
                     setGoal((g) => ({ ...g, prompt: e.target.value }))
                   }
                   aria-describedby="goal-disclaimer"
-                  placeholder="你想让这个推荐世界变得怎样？"
+                  placeholder="记录本次实验目的"
                 />
                 {busy ? (
                   <button
@@ -751,8 +742,8 @@ export default function App() {
                   </button>
                 ) : (
                   <button className="primary-button" onClick={explore}>
-                    <WandSparkles size={16} />
-                    <span>开始探索</span>
+                    <Play size={16} />
+                    <span>运行演示实验</span>
                     <ArrowRight size={15} />
                   </button>
                 )}
@@ -772,7 +763,7 @@ export default function App() {
                     >
                       <span>
                         {g.id === "newcomers" ? (
-                          <Sparkles size={11} />
+                          <SlidersHorizontal size={11} />
                         ) : g.id === "diversity" ? (
                           <Layers3 size={11} />
                         ) : (
@@ -785,18 +776,45 @@ export default function App() {
                 </div>
                 <span id="goal-disclaimer" className="demo-note">
                   <Info size={12} />
-                  预设流程演示 · 无模型调用
+                  预设执行流程 · AGH 未接入
                 </span>
               </div>
             </div>
           </section>
 
+          <section className="experiment-specs" aria-label="当前实验信息">
+            <div>
+              <span>数据</span>
+              <strong>
+                合成样本{" "}
+                <small>
+                  {settings.users} 用户 × {settings.creators} 创作者
+                </small>
+              </strong>
+            </div>
+            <div>
+              <span>排序模型</span>
+              <strong>
+                规则模型 v0.1 <small>未训练</small>
+              </strong>
+            </div>
+            <div>
+              <span>对照条件</span>
+              <strong>
+                同样本 / 同种子 <small>seed {settings.seed}</small>
+              </strong>
+            </div>
+            <button onClick={() => openModal("algorithm")}>
+              查看排序规则 <ArrowUpRight size={13} />
+            </button>
+          </section>
+
           <div className="worlds-section-heading">
             <div className="section-title">
-              <h2>两个世界，一次对照</h2>
+              <h2>曝光分配</h2>
               <span className="shared-badge">
                 <GitBranch size={11} />
-                同源分叉
+                同数据 / 同种子
               </span>
             </div>
             <div className="world-controls">
@@ -832,9 +850,7 @@ export default function App() {
               }}
               onExpand={() => openModal("baseline")}
             />
-            <div className="world-connection">
-              <GitBranch size={13} />
-            </div>
+
             <WorldPanel
               world={{ ...world, id: branch.worldId }}
               simulation={branch}
@@ -858,7 +874,7 @@ export default function App() {
               className="legend-label"
               onClick={() => setShowAllTopics(!showAllTopics)}
             >
-              内容宇宙{" "}
+              内容类别{" "}
               <ChevronDown
                 size={12}
                 className={!showAllTopics ? "rotate" : ""}
@@ -872,7 +888,7 @@ export default function App() {
                 </span>
               ))}
             <span className="legend-explanation">
-              圆点面积随累计曝光变化 · 点击创作者探索
+              圆点面积随累计曝光变化 · 点击查看创作者明细
             </span>
           </div>
 
@@ -972,20 +988,13 @@ export default function App() {
             </button>
           </section>
 
-          <div className="spotlight-strip">
-            <div className="spotlight-copy">
-              <span className="spotlight-star">
-                <Sparkles size={15} />
-              </span>
-              <strong>宏观的变化，微小的命运。</strong>
-              <span>看看一位创作者在两个世界里的不同经历。</span>
-            </div>
-            <button onClick={() => selectCreator(featured.id)}>
-              <Avatar creator={featured} size={25} />
-              <span>追踪「{featured.name}」</span>
-              <ArrowUpRight size={14} />
-            </button>
-          </div>
+          <CreatorComparisonTable
+            world={world}
+            baseline={baseline}
+            branch={branch}
+            frame={tick}
+            onSelect={selectCreator}
+          />
 
           <div className="results-grid">
             <EventLog events={events} busy={busy} />
@@ -993,11 +1002,11 @@ export default function App() {
               <div className="panel-heading">
                 <div>
                   <Target size={17} />
-                  <h3>这次改变，值得吗？</h3>
+                  <h3>约束检查</h3>
                 </div>
                 <span className="muted-badge">
                   {tick === settings.rounds
-                    ? "单次模拟结果"
+                    ? "单种子结果"
                     : `第 ${tick} 轮快照`}
                 </span>
               </div>
@@ -1017,21 +1026,21 @@ export default function App() {
                   <div>
                     <strong>
                       {tick === 0
-                        ? "世界正在等待第一步"
+                        ? "尚未产生推荐"
                         : comparison.passed
-                          ? "当前模拟达到目标"
+                          ? "满足当前约束"
                           : explored && tick === settings.rounds
                             ? "未找到满足条件的方案"
-                            : "改变之中，仍有取舍"}
+                            : "部分约束未满足"}
                     </strong>
                     <p>
                       {tick === 0
-                        ? "推进时间，观察两种规则如何改变分配。"
+                        ? "当前处于第 0 轮。播放或拖动时间轴查看结果。"
                         : comparison.passed
-                          ? "两项约束均满足，接下来检验它是否稳定。"
+                          ? "本种子下两项约束通过。复验结果单独记录。"
                           : explored && tick === settings.rounds
                             ? "两种方案均未满足全部约束，尝试记录已保留。"
-                            : "查看下面的约束，再尝试另一组策略。"}
+                            : "各项结果如下，可在配置中调整目标或排序参数。"}
                     </p>
                   </div>
                 </div>
@@ -1071,7 +1080,7 @@ export default function App() {
                 <div className="constraint-row">
                   <div>
                     <span className="constraint-label">
-                      满意度下降不超过 {goal.tolerance} 分
+                      反馈得分下降不超过 {goal.tolerance} 分
                     </span>
                     <p className="constraint-hint">相对同轮基线的变化</p>
                   </div>
@@ -1140,7 +1149,7 @@ export default function App() {
                       addEvent(
                         "simulate + compare_worlds",
                         "用新种子复验当前方案",
-                        `Seed ${seed} 的完整模拟已结束。结果来自相同规则下的另一个世界。`,
+                        `Seed ${seed} 的完整模拟已结束。结果来自相同规则下的新种子实验。`,
                         { seed, policy },
                         result,
                         performance.now() - start,
@@ -1162,14 +1171,75 @@ export default function App() {
           <footer className="page-footer">
             <span>
               <Brand small />
-              <strong>FeedVerse</strong> <span>让推荐的可能性，被看见。</span>
+              <strong>FeedVerse</strong> <span>{ENGINE_VERSION}</span>
             </span>
             <button onClick={() => openModal("help")}>
-              关于这个世界 <ArrowUpRight size={12} />
+              模型与指标说明 <ArrowUpRight size={12} />
             </button>
           </footer>
         </main>
       </div>
+
+      {modal === "algorithm" && (
+        <Dialog
+          title="当前排序规则"
+          eyebrow="RULE MODEL / v0.1"
+          onClose={closeModal}
+          wide
+        >
+          <p className="dialog-description">
+            当前为手写规则模型，直接使用合成兴趣、质量先验、声望和曝光反馈。不包含训练过程或学习得到的模型权重。
+          </p>
+          <div className="algorithm-summary">
+            <div>
+              <span>基线 A</span>
+              <strong>固定权重排序</strong>
+            </div>
+            <div>
+              <span>实验 B</span>
+              <strong>同一规则 + 三项参数干预</strong>
+            </div>
+          </div>
+          <pre className="algorithm-code">
+            <code>{`score = 0.48 * affinity
+      + 0.22 * quality_prior
+      + 0.30 * log_popularity
+      - 0.022 * sqrt(repeated_views)
+      + newcomer_boost * affinity / sqrt(1 + exposure / 60)
+      + diversity_weight * underrepresented_category
+      + 0.035 * seeded_noise
+
+// 探索轮：从完整候选中随机选择
+// 两组共享 2% 背景探索率，实验组增加 exploration
+// 新作者质量先验固定为 0.66，其他创作者使用合成质量`}</code>
+          </pre>
+          <div className="algorithm-parameters">
+            <span>实验 B 当前参数</span>
+            <strong>
+              探索 {percent(policy.exploration)}% / 新作者扶持{" "}
+              {percent(policy.newcomerBoost)}% / 多样性权重{" "}
+              {percent(policy.diversity)}%
+            </strong>
+          </div>
+          <div className="model-roadmap">
+            <span className="muted-badge">待接入</span>
+            <p>
+              可训练的推荐算法、代码执行环境和 AGH
+              工具调用将在后续接入。当前页面用于对照结果和交互原型。
+            </p>
+          </div>
+          <div className="dialog-actions">
+            <span>规则定义：src/engine.ts</span>
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => openModal("settings")}
+            >
+              调整当前参数 <SlidersHorizontal size={14} />
+            </button>
+          </div>
+        </Dialog>
+      )}
 
       {modal === "creator" && (
         <CreatorDetail
@@ -1186,15 +1256,11 @@ export default function App() {
         />
       )}
       {modal === "settings" && (
-        <Dialog
-          title="定义你的实验"
-          eyebrow="WORLD & POLICY"
-          onClose={closeModal}
-        >
+        <Dialog title="实验配置" eyebrow="CONFIGURATION" onClose={closeModal}>
           <div className="settings-section">
             <div className="settings-section-title">
               <Globe2 size={16} />
-              <h3>世界设置</h3>
+              <h3>样本与运行设置</h3>
               <span>两组共同使用</span>
             </div>
             <div className="settings-inputs">
@@ -1261,7 +1327,7 @@ export default function App() {
             <div className="settings-section-title">
               <SlidersHorizontal size={16} />
               <h3>干预策略</h3>
-              <span className="orange-text">仅改变世界 B</span>
+              <span className="orange-text">仅影响实验 B</span>
             </div>
             {(
               [
@@ -1331,7 +1397,7 @@ export default function App() {
                 />
               </label>
               <label>
-                允许满意度下降
+                允许反馈得分下降
                 <select
                   value={draft.goal.tolerance}
                   onChange={(e) =>
@@ -1355,12 +1421,12 @@ export default function App() {
           </div>
           <details className="assumptions">
             <summary>
-              这个世界基于哪些假设？
+              查看模拟假设
               <ChevronDown size={14} />
             </summary>
             <p>
               用户兴趣和内容池固定，每位用户每轮获得一次推荐。新创作者占
-              1/3，初始声望较低。满意度由兴趣匹配、内容质量和重复疲劳计算。两组共有
+              1/3，初始声望较低。反馈得分由兴趣匹配、内容质量和重复疲劳计算。两组共有
               2%
               的背景探索率；滑块表示额外干预。反馈会影响下一轮排序，但不会改变用户兴趣。没有模拟社交转发或真实收入。
             </p>
@@ -1463,8 +1529,8 @@ export default function App() {
         <Dialog
           title={
             modal === "baseline"
-              ? "基线世界 · 点击率优先"
-              : "干预世界 · 另一种可能"
+              ? "基线 A · 规则排序 v0.1"
+              : "实验 B · 当前排序配置"
           }
           eyebrow={`WORLD ${modal === "baseline" ? "A" : "B"} / ROUND ${tick}`}
           onClose={closeModal}
@@ -1484,14 +1550,14 @@ export default function App() {
             playing={false}
           />
           <p className="dialog-description">
-            每个圆点是一位创作者，外圈标记新作者。点击圆点查看同一个人在两个世界中的经历。
+            圆点代表创作者，外圈标记新作者。类别内位置固定，两组坐标一致。点击查看累计曝光、点击和独立触达。
           </p>
         </Dialog>
       )}
       {modal === "creators" && (
         <Dialog
-          title="每个圆点背后，都有一个故事"
-          eyebrow="THE PEOPLE IN THIS WORLD"
+          title="创作者列表"
+          eyebrow="SYNTHETIC DATA"
           onClose={closeModal}
           wide
         >
@@ -1559,8 +1625,8 @@ export default function App() {
       )}
       {modal === "history" && (
         <Dialog
-          title="值得保留的每一次尝试"
-          eyebrow="EXPERIMENT ARCHIVE"
+          title="实验档案"
+          eyebrow="RUN HISTORY"
           onClose={closeModal}
           wide
         >
@@ -1583,7 +1649,7 @@ export default function App() {
                     setModal(null);
                     addEvent(
                       "restore_run",
-                      "回到一段实验记录",
+                      "载入实验配置",
                       "已重新计算并载入所选方案。",
                       { seed: run.settings.seed, policy: run.policy },
                       restored.branch.frames.at(-1)!.metrics,
@@ -1616,8 +1682,8 @@ export default function App() {
           ) : (
             <div className="empty-state">
               <History size={34} />
-              <h3>你的第一个实验，正等待开始</h3>
-              <p>运行一次演示探索，或手动调整策略，方案就会出现在这里。</p>
+              <h3>暂无实验记录</h3>
+              <p>运行演示实验或应用新配置后，方案会保存到本次会话。</p>
               <button
                 className="primary-button"
                 onClick={() => {
@@ -1625,7 +1691,7 @@ export default function App() {
                   explore();
                 }}
               >
-                开始第一个实验
+                运行一次演示实验
                 <ArrowRight size={14} />
               </button>
             </div>
@@ -1634,35 +1700,35 @@ export default function App() {
       )}
       {modal === "help" && (
         <Dialog
-          title="欢迎来到推荐平行世界"
-          eyebrow="A SMALL WORLD. BIG WHAT IFS."
+          title="FeedVerse 使用说明"
+          eyebrow="LOCAL PROTOTYPE"
           onClose={closeModal}
           wide
         >
           <p className="dialog-description">
             FeedVerse
-            是一个可操作、可回放的推荐机制沙盘。在同一个起点改变规则，观察机会如何重新分配。
+            是一个可操作、可回放的推荐机制沙盘。用于比较推荐规则的输出，并检查预设约束。
           </p>
           <div className="help-steps">
             {[
               [
                 "01",
-                "提出一个目标",
+                "配置目标",
                 "选择预设目标，或在实验设置中修改可计算的约束。",
               ],
               [
                 "02",
-                "看见世界分叉",
+                "对照结果",
                 "左侧固定为基线，右侧应用干预。播放或拖动时间轴同步观察。",
               ],
               [
                 "03",
-                "走近一位创作者",
+                "查看创作者",
                 "点击圆点，对照曝光、独立用户和点击，追踪具体变化。",
               ],
               [
                 "04",
-                "检查而不只相信",
+                "复验与导出",
                 "展开工具输入输出，用另一个随机种子复验，导出完整记录。",
               ],
             ].map(([num, title, desc]) => (
@@ -1699,7 +1765,7 @@ export default function App() {
               <kbd>Space</kbd> 播放 / 暂停 <kbd>Esc</kbd> 关闭弹窗
             </span>
             <button className="primary-button" onClick={closeModal}>
-              去看看另一个世界
+              关闭说明
               <ArrowRight size={14} />
             </button>
           </div>

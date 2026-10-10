@@ -7,12 +7,12 @@ import {
   ChevronDown,
   ChevronRight,
   Code2,
-  Compass,
+  Terminal,
   Expand,
   Focus,
   Minus,
   Plus,
-  Sparkles,
+  Info,
   X,
 } from "lucide-react";
 import {
@@ -33,19 +33,8 @@ export function Brand({ small = false }: { small?: boolean }) {
       viewBox="0 0 40 40"
       aria-hidden="true"
     >
-      <rect width="40" height="40" rx="12" fill="#7165d8" />
-      <ellipse
-        cx="20"
-        cy="20"
-        rx="12"
-        ry="6"
-        transform="rotate(-38 20 20)"
-        fill="none"
-        stroke="white"
-        strokeWidth="1.6"
-      />
-      <circle cx="20" cy="20" r="3.6" fill="white" />
-      <circle cx="30" cy="12" r="2.9" fill="#ffce9a" />
+      <rect width="40" height="40" rx="6" fill="#25332f" />
+      <path d="M12 29V11h17v4H17v4h10v4H17v6Z" fill="#f7f8f6" />
     </svg>
   );
 }
@@ -101,8 +90,8 @@ export const METRICS: {
 }[] = [
   {
     key: "satisfaction",
-    name: "用户满意度",
-    hint: "模拟用户兴趣、内容质量与重复疲劳共同计算的平均满意度，范围 0–100。",
+    name: "模拟反馈得分",
+    hint: "由合成兴趣、内容质量与重复疲劳计算的反馈分数，范围 0–100；不是实测用户满意度。",
     unit: "",
   },
   {
@@ -227,45 +216,12 @@ export function WorldMap({
       <svg
         viewBox="0 0 540 355"
         role="group"
-        aria-label="创作者曝光星图，点击圆点可比较该创作者在两个世界中的经历"
+        aria-label="创作者曝光分布，点击圆点可比较基线与实验分支"
       >
-        <defs>
-          <pattern
-            id={`dots-${world.id}`}
-            width="18"
-            height="18"
-            patternUnits="userSpaceOnUse"
-          >
-            <circle cx="1" cy="1" r=".7" fill="#d6dae4" opacity=".47" />
-          </pattern>
-        </defs>
-        <rect width="540" height="355" fill={`url(#dots-${world.id})`} />
+        <rect width="540" height="355" fill="#fbfcfb" />
         <g
           transform={`translate(${270 * (1 - zoom)} ${177 * (1 - zoom)}) scale(${zoom})`}
         >
-          <ellipse
-            cx="265"
-            cy="177"
-            rx="211"
-            ry="131"
-            fill="none"
-            stroke="#e5e7ed"
-            strokeDasharray="3 7"
-          />
-          <ellipse
-            cx="265"
-            cy="177"
-            rx="145"
-            ry="80"
-            fill="none"
-            stroke="#eceef3"
-            strokeDasharray="3 8"
-          />
-          <path
-            d="M40 177H497M265 22V332"
-            stroke="#eeeff4"
-            strokeDasharray="3 9"
-          />
           {TOPICS.map((t, i) => (
             <g key={t.name} className="topic-zone">
               <ellipse
@@ -273,26 +229,22 @@ export function WorldMap({
                 cy={t.y}
                 rx="76"
                 ry="52"
-                fill={t.soft}
-                opacity=".26"
+                fill="none"
+                stroke="#e3e7e4"
+                strokeDasharray="2 4"
               />
               <text
                 x={t.x}
                 y={t.y + (i > 2 ? 62 : -53)}
                 textAnchor="middle"
-                fill="#9ba1b0"
-                fontSize="10"
-                letterSpacing="3"
+                fill="#737e77"
+                fontSize="11"
+                letterSpacing="1"
               >
                 {t.name}
               </text>
             </g>
           ))}
-          <g className="world-center">
-            <circle cx="265" cy="177" r="19" fill="#fff" stroke="#e7e8ed" />
-            <path d="M257 177h16m-8-8v16" stroke="#c7cbd6" />
-            <circle cx="265" cy="177" r="4" fill="#f8f9fb" stroke="#c7cbd6" />
-          </g>
           {[...world.creators]
             .sort((a, b) => frame.exposure[a.id] - frame.exposure[b.id])
             .map((c) => {
@@ -339,8 +291,7 @@ export function WorldMap({
                       stroke={topic.color}
                       opacity=".55"
                       strokeWidth="1"
-                      strokeDasharray="3 3"
-                      className="selection-orbit"
+                      className="selection-outline"
                     />
                   )}
                   {c.isNew && (
@@ -361,17 +312,9 @@ export function WorldMap({
                     cy={c.y}
                     r={r}
                     fill={topic.color}
-                    opacity={opacity * 0.8}
+                    opacity={opacity * 0.85}
                     stroke="white"
                     strokeWidth="1.4"
-                  />
-                  <circle
-                    cx={c.x - r * 0.24}
-                    cy={c.y - r * 0.26}
-                    r={r * 0.55}
-                    fill="white"
-                    opacity={opacity * 0.12}
-                    pointerEvents="none"
                   />
                   {r > 12 && (
                     <text
@@ -418,7 +361,7 @@ export function WorldMap({
           <strong>{focused.name}</strong>
           <span>{frame.exposure[focused.id].toLocaleString()} 次曝光</span>
           <span className="tooltip-arrow">
-            点击追踪 <ArrowUpRight size={12} />
+            查看明细 <ArrowUpRight size={12} />
           </span>
         </div>
       )}
@@ -463,13 +406,15 @@ export function WorldPanel({
       <div className="world-panel-heading">
         <div className="world-heading-name">
           <span className={`world-dot ${branch ? "orange" : "blue"}`} />
-          <h3>{branch ? "干预世界" : "基线世界"}</h3>
-          <span className="world-code">{branch ? "WORLD B" : "WORLD A"}</span>
+          <h3>{branch ? "实验 B" : "基线 A"}</h3>
+          <span className="world-code">
+            {branch ? "rule + rerank" : "rule-baseline"}
+          </span>
         </div>
         <button
           className="icon-button subtle"
-          title={`展开${branch ? "干预" : "基线"}世界`}
-          aria-label={`展开${branch ? "干预" : "基线"}世界`}
+          title={`展开${branch ? "实验 B" : "基线 A"}`}
+          aria-label={`展开${branch ? "实验 B" : "基线 A"}`}
           onClick={onExpand}
         >
           <Expand size={15} />
@@ -479,7 +424,7 @@ export function WorldPanel({
         <span>
           {branch
             ? `探索 ${Math.round(simulation.policy.exploration * 100)}% · 扶持 ${Math.round(simulation.policy.newcomerBoost * 100)}% · 多样性 ${Math.round(simulation.policy.diversity * 100)}%`
-            : "点击率优先"}
+            : "规则排序 v0.1"}
         </span>
         {branch ? (
           <button className="policy-link" onClick={onPolicy}>
@@ -507,7 +452,7 @@ export function WorldPanel({
         <div className="map-zoom">
           <button
             className="icon-button"
-            aria-label={`缩小${branch ? "干预" : "基线"}星图`}
+            aria-label={`缩小${branch ? "实验" : "基线"}分布图`}
             disabled={zoom <= 1}
             onClick={() => setZoom((v) => Math.max(1, v - 0.15))}
           >
@@ -516,7 +461,7 @@ export function WorldPanel({
           <span>{Math.round(zoom * 100)}%</span>
           <button
             className="icon-button"
-            aria-label={`放大${branch ? "干预" : "基线"}星图`}
+            aria-label={`放大${branch ? "实验" : "基线"}分布图`}
             disabled={zoom >= 1.45}
             onClick={() => setZoom((v) => Math.min(1.45, v + 0.15))}
           >
@@ -579,6 +524,148 @@ export type ToolEvent = {
   result?: unknown;
   durationMs?: number;
 };
+
+export function CreatorComparisonTable({
+  world,
+  baseline,
+  branch,
+  frame,
+  onSelect,
+}: {
+  world: World;
+  baseline: Simulation;
+  branch: Simulation;
+  frame: number;
+  onSelect: (id: number) => void;
+}) {
+  const [filter, setFilter] = useState<"all" | "new">("new");
+  const [sort, setSort] = useState<"change" | "gain" | "loss">("change");
+  const a = baseline.frames[frame],
+    b = branch.frames[frame];
+  const rows = world.creators
+    .filter((c) => filter === "all" || c.isNew)
+    .map((c) => ({
+      creator: c,
+      before: a.exposure[c.id],
+      after: b.exposure[c.id],
+      change: b.exposure[c.id] - a.exposure[c.id],
+      reachChange: b.reach[c.id] - a.reach[c.id],
+    }))
+    .sort((x, y) =>
+      sort === "gain"
+        ? y.change - x.change
+        : sort === "loss"
+          ? x.change - y.change
+          : Math.abs(y.change) - Math.abs(x.change),
+    );
+  return (
+    <section className="creator-table-section">
+      <div className="table-heading">
+        <div>
+          <h3>曝光变化明细</h3>
+          <span>第 {frame} 轮 · 两组累计曝光</span>
+        </div>
+        <div className="table-controls">
+          <div className="segmented">
+            <button
+              className={filter === "new" ? "selected" : ""}
+              onClick={() => setFilter("new")}
+            >
+              新创作者
+            </button>
+            <button
+              className={filter === "all" ? "selected" : ""}
+              onClick={() => setFilter("all")}
+            >
+              全部
+            </button>
+          </div>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            aria-label="明细排序"
+          >
+            <option value="change">按变化幅度</option>
+            <option value="gain">按曝光增加</option>
+            <option value="loss">按曝光减少</option>
+          </select>
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table className="creator-table">
+          <thead>
+            <tr>
+              <th>创作者</th>
+              <th>类别</th>
+              <th>基线 A</th>
+              <th>实验 B</th>
+              <th>曝光差值</th>
+              <th>触达差值</th>
+              <th>
+                <span className="sr-only">详情</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows
+              .slice(0, 6)
+              .map(({ creator, before, after, change, reachChange }) => (
+                <tr key={creator.id}>
+                  <td>
+                    <button
+                      className="table-creator"
+                      onClick={() => onSelect(creator.id)}
+                    >
+                      <Avatar creator={creator} size={25} />
+                      <span>
+                        {creator.name}
+                        <small>
+                          C-{String(creator.id + 1).padStart(3, "0")}
+                        </small>
+                      </span>
+                    </button>
+                  </td>
+                  <td>
+                    <span className="table-category">
+                      <i style={{ background: TOPICS[creator.topic].color }} />
+                      {TOPICS[creator.topic].name}
+                    </span>
+                  </td>
+                  <td>{before.toLocaleString()}</td>
+                  <td>{after.toLocaleString()}</td>
+                  <td
+                    className={
+                      change > 0 ? "gain-cell" : change < 0 ? "loss-cell" : ""
+                    }
+                  >
+                    {change > 0 ? "+" : ""}
+                    {change.toLocaleString()}
+                  </td>
+                  <td>
+                    {reachChange > 0 ? "+" : ""}
+                    {reachChange.toLocaleString()}
+                  </td>
+                  <td>
+                    <button
+                      className="icon-button"
+                      aria-label={`查看${creator.name}明细`}
+                      onClick={() => onSelect(creator.id)}
+                    >
+                      <ArrowUpRight size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="table-footer">
+        显示 {Math.min(6, rows.length)} / {rows.length} 位创作者 ·
+        触达为独立用户数，重复曝光不重复计数。
+      </div>
+    </section>
+  );
+}
 export function EventLog({
   events,
   busy,
@@ -596,9 +683,9 @@ export function EventLog({
     <section className="events-panel panel">
       <div className="panel-heading">
         <div>
-          <Compass size={17} />
-          <h3>AGH 实验记录</h3>
-          <span className="muted-badge">脚本演示</span>
+          <Terminal size={17} />
+          <h3>执行记录</h3>
+          <span className="muted-badge">本地脚本</span>
         </div>
         <button
           className={`text-button ${code ? "is-active" : ""}`}
@@ -674,8 +761,8 @@ export function EventLog({
         ))}
       </div>
       <div className="panel-footnote">
-        <span className="status-dot purple" />
-        真实本地工具 · 演示控制器 · 尚未连接 AGH 模型
+        <span className="status-dot" />
+        本地脚本执行记录；AGH 尚未接入。
       </div>
     </section>
   );
@@ -790,8 +877,8 @@ export function CreatorDetail({
   const topic = TOPICS[creator.topic];
   return (
     <Dialog
-      title="同一个人，不同的可能"
-      eyebrow="CREATOR SPOTLIGHT"
+      title="创作者对照明细"
+      eyebrow={`C-${String(creator.id + 1).padStart(3, "0")} / 第 ${frame} 轮`}
       onClose={onClose}
     >
       <div className="creator-profile">
@@ -804,7 +891,7 @@ export function CreatorDetail({
             </span>
           </h3>
           <p>
-            {topic.name} · {creator.bio}
+            {topic.name} · 初始声望 {creator.prior.toFixed(0)} · 合成样本
           </p>
         </div>
       </div>
@@ -812,7 +899,7 @@ export function CreatorDetail({
         <div>
           <span>
             <i className="world-dot blue" />
-            基线世界
+            基线 A
           </span>
           <strong>{a.exposure[id].toLocaleString()}</strong>
           <small>次曝光</small>
@@ -823,7 +910,7 @@ export function CreatorDetail({
         <div>
           <span>
             <i className="world-dot orange" />
-            干预世界
+            实验 B
           </span>
           <strong>{b.exposure[id].toLocaleString()}</strong>
           <small>次曝光</small>
@@ -843,7 +930,7 @@ export function CreatorDetail({
             height={100}
             range={[0, Math.max(a.exposure[id], b.exposure[id], 1)]}
             fill
-            label="基线世界曝光轨迹"
+            label="基线 A曝光轨迹"
           />
           <Sparkline
             values={branch.frames
@@ -852,7 +939,7 @@ export function CreatorDetail({
             color="#d99368"
             height={100}
             range={[0, Math.max(a.exposure[id], b.exposure[id], 1)]}
-            label="干预世界曝光轨迹"
+            label="实验 B曝光轨迹"
           />
         </div>
         <div className="chart-axis">
@@ -862,7 +949,7 @@ export function CreatorDetail({
       </div>
       <div className="creator-detail-metrics">
         <div>
-          <span>被多少用户发现</span>
+          <span>独立触达用户</span>
           <strong>
             <span className="blue-text">{a.reach[id]}</span>
             <span>→</span>
@@ -870,7 +957,7 @@ export function CreatorDetail({
           </strong>
         </div>
         <div>
-          <span>获得多少次点击</span>
+          <span>累计点击</span>
           <strong>
             <span className="blue-text">{a.clicks[id]}</span>
             <span>→</span>
@@ -879,16 +966,18 @@ export function CreatorDetail({
         </div>
       </div>
       <div className="story-note">
-        <Sparkles size={17} />
+        <Info size={17} />
         <p>
           {first !== undefined && first <= frame ? (
             <>
               第 <strong>{first}</strong> 轮，{creator.name}
-              在干预世界获得了第一次曝光。目前被 <strong>{b.reach[id]}</strong>{" "}
+              在实验 B获得了第一次曝光。目前被 <strong>
+                {b.reach[id]}
+              </strong>{" "}
               位独立用户发现。
             </>
           ) : (
-            "这个创作者还在等待第一次被发现。继续推进世界，或尝试调整推荐规则。"
+            "当前轮次没有曝光记录。继续回放或调整排序配置查看变化。"
           )}
         </p>
       </div>
@@ -896,7 +985,7 @@ export function CreatorDetail({
         <span>数据来自当前模拟，不代表真实平台。</span>
         <button className="secondary-button" onClick={onNext}>
           <Focus size={14} />
-          看看另一位创作者
+          下一位新作者
         </button>
       </div>
     </Dialog>

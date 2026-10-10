@@ -1,12 +1,12 @@
 /** A small, deterministic recommendation world. All displayed metrics come from here. */
 export const ENGINE_VERSION = "feedverse-sim/0.1";
 export const TOPICS = [
-  { name: "科技", color: "#8186d9", soft: "#eeeffb", x: 132, y: 84 },
-  { name: "生活", color: "#d8ad61", soft: "#faf4e7", x: 328, y: 72 },
-  { name: "艺术", color: "#93b6a7", soft: "#edf5f1", x: 442, y: 152 },
-  { name: "音乐", color: "#b194c8", soft: "#f4eef8", x: 354, y: 266 },
-  { name: "知识", color: "#88b0cb", soft: "#edf4f8", x: 167, y: 274 },
-  { name: "影像", color: "#d39181", soft: "#faeeea", x: 67, y: 184 },
+  { name: "科技", color: "#597ea8", soft: "#eeeffb", x: 132, y: 84 },
+  { name: "生活", color: "#aa904f", soft: "#faf4e7", x: 328, y: 72 },
+  { name: "艺术", color: "#498576", soft: "#edf5f1", x: 442, y: 152 },
+  { name: "音乐", color: "#8e6580", soft: "#f4eef8", x: 354, y: 266 },
+  { name: "知识", color: "#68869d", soft: "#edf4f8", x: 167, y: 274 },
+  { name: "影像", color: "#b3735e", soft: "#faeeea", x: 67, y: 184 },
 ];
 export type Policy = {
   exploration: number;
@@ -70,24 +70,24 @@ export type Goal = {
 export const GOALS: Goal[] = [
   {
     id: "newcomers",
-    label: "发现新创作者",
-    prompt: "让新创作者获得更多机会，同时保持用户满意度",
+    label: "新作者曝光",
+    prompt: "新作者曝光占比至少 20%，反馈得分下降不超过 3 分",
     metric: "newcomerShare",
     target: 20,
     tolerance: 3,
   },
   {
     id: "diversity",
-    label: "拓宽兴趣边界",
-    prompt: "让用户看到更多元的内容，同时保持用户满意度",
+    label: "内容多样性",
+    prompt: "内容多样性至少 22 分，反馈得分下降不超过 4 分",
     metric: "diversity",
     target: 22,
     tolerance: 4,
   },
   {
     id: "balance",
-    label: "减少曝光集中",
-    prompt: "让曝光分配更均衡，同时保持用户满意度",
+    label: "曝光均衡",
+    prompt: "曝光集中度不超过 40%，反馈得分下降不超过 3 分",
     metric: "concentration",
     target: 40,
     tolerance: 3,
