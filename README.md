@@ -1,10 +1,22 @@
 # FeedVerse · 推荐平行世界
 
-一个可以改变推荐规则、同步回放和追踪创作者的可视化实验沙盘。
+本地推荐实验系统：真实 MIND 数据、可训练的历史推荐模型、AGH 修改模型代码、独立评价。
 
-当前版本是完整的本地交互原型：推荐模拟和指标由浏览器内的确定性引擎计算；“执行记录”由明确标注的预设控制流程驱动，尚未连接 AGH 或任何付费模型。
+核心系统与网页分开运行。网页保留已有规则模拟原型，其展示指标尚未接入真实训练结果；真实 AGH 会话和模型实验通过 CLI/MCP 完成。网页接入和比赛展示将在核心验证完成后另行规划。
 
-## 本地运行
+## 核心系统
+
+协议见 [docs/core-protocol.md](docs/core-protocol.md)，运行与恢复见 [docs/core-usage.md](docs/core-usage.md)。Python 实现在 `feedverse/`，AGH SDK、TRAPI bridge 和 MCP 启动器在 `scripts/`。原始数据、凭据、模型和会话轨迹仅保存于被 Git 忽略的 `local/`；源码和汇总报告可提交私有仓库。
+
+```sh
+python -m feedverse.cli prepare /absolute/path/to/recprompt_repro/dataset
+python -m feedverse.cli train baseline
+python -m feedverse.cli status JOB_ID
+python -m feedverse.cli evaluate baseline
+python -m unittest discover -s tests/core -v
+```
+
+## 网页原型运行
 
 ```bash
 npm install
@@ -41,7 +53,7 @@ npm run preview
 
 这是一组公开假设下的机制模拟，不直接代表真实平台因果效果。演示控制器按所选预设与数值约束执行；顶部自然语言内容作为实验备注。不同种子的复验可能失败，界面如实呈现结果。
 
-主要代码：`src/engine.ts` 为独立模拟函数，`src/App.tsx` 管理交互与演示流程，`src/components.tsx` 提供星图、详情和记录组件。后续可将引擎函数封装成 AGH 工具，替换演示控制器。
+主要代码：`src/engine.ts` 为独立模拟函数，`src/App.tsx` 管理交互与演示流程，`src/components.tsx` 提供星图、详情和记录组件。真实后端不会使用该合成引擎作为模型评价器；后续网页将展示独立训练/评价结果。
 
 ## 历史
 

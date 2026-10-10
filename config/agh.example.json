@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "a39272bb6bcb3109584e1bd3abac595789ae365d",
+  "pnpmVersion": "10.34.5",
+  "deployment": "gpt-6-astra_2026-09-03",
+  "model": "gpt-6-astra",
+  "instance": "redmond/interactive",
+  "apiVersion": "2025-04-01-preview",
+  "bridgePort": 18777,
+  "mcpPort": 18778,
+  "thinking": "low",
+  "contextWindow": 65536,
+  "maxCandidates": 3,
+  "requestTimeoutSeconds": 180,
+  "explorationTimeoutSeconds": 1800
+}
