@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -61,13 +62,14 @@ def inspect_event(event):
     return None, None, None
 
 
-def serve(config):
+def serve(config, upstream_workers=None):
     database = Path(config['root']) / 'control' / 'usage.sqlite'
     database.parent.mkdir(parents=True, exist_ok=True)
     with connect(database) as db:
         db.execute("UPDATE requests SET status='interrupted_unknown',ended=? WHERE status='in_flight'", (time.time(),))
     credential = ChainedTokenCredential(AzureCliCredential(), ManagedIdentityCredential())
     upstream = f"https://trapi.research.microsoft.com/{config['instance']}/openai/responses"
+    admission = threading.BoundedSemaphore(upstream_workers) if upstream_workers else None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -107,6 +109,7 @@ def serve(config):
                 return self.reply(404, {'error': {'message': 'Unknown model route'}})
             request_id = None
             headers_sent = False
+            admitted = False
             try:
                 length = int(self.headers.get('Content-Length', 0))
                 if not 0 < length <= 8 * 1024 * 1024:
@@ -114,6 +117,10 @@ def serve(config):
                 body = json.loads(self.rfile.read(length))
                 if not judge and body.get('model') != config['model']:
                     return self.reply(400, {'error': {'message': 'Frozen model mismatch'}})
+                if admission:
+                    admitted = admission.acquire(timeout=180)
+                    if not admitted:
+                        return self.reply(503, {'error': {'message': 'Upstream admission wait exceeded'}})
                 request_id = reserve(database, self.key(), 'judge' if judge else 'task')
                 body['model'] = config['judge_deployment'] if judge else config['deployment']
                 if not judge:
@@ -191,6 +198,9 @@ def serve(config):
                 if not headers_sent:
                     self.reply(502, {'error': {'message': 'Gateway failed: ' + kind}})
                 self.close_connection = True
+            finally:
+                if admission and admitted:
+                    admission.release()
 
     ThreadingHTTPServer(('127.0.0.1', config['port']), Handler).serve_forever()
 
@@ -198,4 +208,6 @@ def serve(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
-    serve(json.loads(Path(parser.parse_args().config).read_text()))
+    parser.add_argument('--upstream-workers', type=int, choices=(1,2,4))
+    args = parser.parse_args()
+    serve(json.loads(Path(args.config).read_text()), args.upstream_workers)
