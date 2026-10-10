@@ -121,9 +121,25 @@ def serve(config):
                 token = credential.get_token('api://trapi/.default').token
                 endpoint = (f"https://trapi.research.microsoft.com/{config['instance']}/openai/deployments/{config['judge_deployment']}/chat/completions"
                             if judge else upstream)
-                with requests.post(endpoint, params={'api-version': config['judge_api_version'] if judge else config['api_version']},
-                    headers={'Authorization': 'Bearer ' + token, 'x-ms-client-request-id': request_id},
-                    json=body, stream=True, timeout=(20, 300)) as response:
+                def send():
+                    return requests.post(endpoint, params={'api-version': config['judge_api_version'] if judge else config['api_version']},
+                        headers={'Authorization': 'Bearer ' + token, 'x-ms-client-request-id': request_id},
+                        json=body, stream=True, timeout=(20, 300))
+                response = send()
+                for retry in range(3):
+                    if response.status_code not in (429,502,503,504):
+                        break
+                    finish(database, request_id, 'http_error', response.status_code, error='bounded_backoff')
+                    delay = response.headers.get('Retry-After', '')
+                    try:
+                        delay = min(120, max(5, float(delay)))
+                    except ValueError:
+                        delay = 15 * (2 ** retry)
+                    response.close()
+                    time.sleep(delay)
+                    request_id = reserve(database, self.key(), 'judge' if judge else 'task')
+                    response = send()
+                with response:
                     self.send_response(response.status_code)
                     self.send_header('Content-Type', response.headers.get('Content-Type', 'application/json'))
                     self.send_header('Connection', 'close')
