@@ -1,5 +1,6 @@
 """Single-agent scientific runner and conservative strategy evolution CLI."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from collections import Counter, defaultdict
 import hashlib
 import importlib.util
@@ -10,6 +11,7 @@ from pathlib import Path
 import random
 import re
 import secrets
+import threading
 import shutil
 import sqlite3
 import statistics
@@ -18,6 +20,29 @@ import time
 import uuid
 
 from bridge import connect, register
+
+BUILD_LOCK = threading.Lock()
+
+
+def parallel_jobs(jobs, function, workers):
+    """Bounded dispatch: never enqueue the full panel before observing failures."""
+    results = []
+    iterator = iter(jobs)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        pending = set()
+        for _ in range(workers):
+            job = next(iterator, None)
+            if job is not None:
+                pending.add(pool.submit(function, job))
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                results.append(future.result())
+            for _ in done:
+                job = next(iterator, None)
+                if job is not None:
+                    pending.add(pool.submit(function, job))
+    return results
 
 
 def sha(path):
@@ -105,9 +130,10 @@ def split_tasks(tasks, target, seed, required=(3,)):
 
 
 class Runner:
-    def __init__(self, config, release):
+    def __init__(self, config, release, workers=1):
         self.config = config
         self.release = Path(release).resolve()
+        self.workers = workers
         self.root = Path(config['root'])
         self.db = check(self.root)
         self.usage_db = self.root / 'control' / 'usage.sqlite'
@@ -191,6 +217,8 @@ class Runner:
             shutil.copytree(self.root / 'reports', destination / 'results', dirs_exist_ok=True)
         if (self.root / 'strategies').exists():
             shutil.copytree(self.root / 'strategies', destination / 'strategies', dirs_exist_ok=True)
+        if (self.root / 'amendments').exists():
+            shutil.copytree(self.root / 'amendments', destination / 'amendments', dirs_exist_ok=True)
         write(destination / 'FILES.json', {str(f.relative_to(destination)): sha(f)
             for f in destination.rglob('*') if f.is_file() and f.name not in ('FILES.json','FILES.json.tmp')})
 
@@ -441,7 +469,10 @@ class Runner:
         dockerfile = module.get_dockerfile_instance('linux/amd64', self.config['image'], name)
         (context / 'Dockerfile').write_text(dockerfile)
         tag = 'agh-rsi-attempt:' + path.name.lower()
-        rc = self.command(['docker', 'build', '-t', tag, str(context)], path / 'dependency-build.log', 1800)
+        # BuildKit package installation can consume host-wide CPU and IO. Serialize builds,
+        # while four independent task/execution containers can continue concurrently.
+        with BUILD_LOCK:
+            rc = self.command(['docker', 'build', '-t', tag, str(context)], path / 'dependency-build.log', 1800)
         if rc != 0:
             return None
         image_id = subprocess.check_output(['docker', 'image', 'inspect', tag, '--format', '{{.Id}}'], text=True).strip()
@@ -456,22 +487,31 @@ class Runner:
         if plan_path.exists() and read(plan_path) != plan:
             raise ValueError('Panel identity changed during resume')
         write(plan_path, plan)
-        results = []
-        for repeat in range(1, repeats+1):
-            for task in tasks:
-                row = self.attempt(task, strategy, phase, repeat)
+        def execute(job):
+            task, repeat = job
+            # Each thread owns its SQLite connection and independent attempt directory.
+            runner = Runner(self.config, self.release)
+            try:
+                row = runner.attempt(task, strategy, phase, repeat)
                 if row['error'] == 'auth_error':
                     raise RuntimeError('Authentication failed; queue stopped without relogin/model substitution')
                 if row['state'] == 'submitted':
-                    row = self.evaluate(row['id'])
+                    row = runner.evaluate(row['id'])
                 # At most two clean retries for technical failures, never for a scored failure.
                 for _ in range(2):
                     if row['state'] != 'infra_error' or row['error'] == 'auth_error':
                         break
-                    row = self.attempt(task, strategy, phase, repeat)
+                    row = runner.attempt(task, strategy, phase, repeat)
                     if row['state'] == 'submitted':
-                        row = self.evaluate(row['id'])
-                results.append(row)
+                        row = runner.evaluate(row['id'])
+                if row['error'] == 'auth_error':
+                    raise RuntimeError('Authentication failed; queue stopped')
+                return row
+            finally:
+                runner.db.close()
+        jobs = [(task, repeat) for repeat in range(1, repeats+1) for task in tasks]
+        results = parallel_jobs(jobs, execute, self.workers)
+        results.sort(key=lambda row: (row['repeat'], row['task']))
         write(self.root / 'reports' / f'{phase}.json', results)
         self.publish_reports()
         return results
@@ -748,6 +788,8 @@ def report(runner):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
+    parser.add_argument('--experiment-release', help='Preserve the frozen worker/config/deployment identity')
+    parser.add_argument('--workers', type=int, choices=(1,2,4), default=1)
     parser.add_argument('command', choices=['smoke', 'run', 'evaluate', 'improve', 'evolve', 'all', 'report', 'status'])
     parser.add_argument('--task', type=int, default=3)
     parser.add_argument('--strategy')
@@ -755,8 +797,8 @@ def main():
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--phase', default='manual')
     args = parser.parse_args()
-    release = Path(__file__).resolve().parent.parent
-    runner = Runner(read(args.config), release)
+    release = Path(args.experiment_release) if args.experiment_release else Path(__file__).resolve().parent.parent
+    runner = Runner(read(args.config), release, args.workers)
     strategy = args.strategy or str(release / 'strategy/initial.md')
     if args.command == 'smoke':
         print(runner.attempt(0, strategy, 'smoke', 1, True))

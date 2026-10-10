@@ -16,6 +16,8 @@ from rsi import write
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
+    parser.add_argument('--experiment-release')
+    parser.add_argument('--workers', type=int, choices=(1,2,4), default=1)
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text())
     root = Path(config['root'])
@@ -24,7 +26,9 @@ def main():
     control.mkdir(parents=True, exist_ok=True)
     lock = (control / 'experiment.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    state = {'pid': os.getpid(), 'started': time.time(), 'release': str(release)}
+    experiment_release = Path(args.experiment_release).resolve() if args.experiment_release else release
+    state = {'pid': os.getpid(), 'started': time.time(), 'release': str(experiment_release),
+             'scheduler_release': str(release), 'workers': args.workers}
     bridge = None
     try:
         state['stage'] = 'preflight'
@@ -60,7 +64,8 @@ def main():
         state['stage'] = 'validation_then_full_experiment'
         write(control / 'supervisor.json', state)
         with (control / 'experiment.log').open('ab') as log:
-            result = subprocess.run([config['python'],str(release/'src/rsi.py'),'--config',args.config,'all'],
+            result = subprocess.run([config['python'],str(release/'src/rsi.py'),'--config',args.config,
+                                    '--experiment-release',str(experiment_release),'--workers',str(args.workers),'all'],
                                     stdout=log,stderr=subprocess.STDOUT)
         state.update(stage='complete' if result.returncode == 0 else 'stopped_on_error',
                      exit_code=result.returncode,ended=time.time())
