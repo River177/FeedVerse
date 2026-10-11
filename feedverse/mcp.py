@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler,HTTPServer
 TOOLS={
 'inspect_dataset':('Inspect permitted dataset statistics',{}),
 'inspect_run':('Inspect training and validation receipts',{'variant':'string'}),
-'create_variant':('Create independent source branch; maximum three candidates',{'name':'string','base':'string'}),
+'create_variant':('Create independent source branch; maximum three candidates',{'name':'string','base':'string','description':'string'}),
 'read_source':('Read model.py only',{'variant':'string'}),
 'patch_source':('Replace editable candidate model.py with executable Python source',{'variant':'string','source':'string'}),
 'train_variant':('Start real asynchronous five-epoch training; returns job ID',{'variant':'string'}),
@@ -20,7 +20,7 @@ def dispatch(backend,request):
         if method=='initialize': result={'protocolVersion':params.get('protocolVersion','2024-11-05'),'capabilities':{'tools':{}},'serverInfo':{'name':'feedverse','version':'1.0.0'}}
         elif method=='ping': result={}
         elif method=='tools/list':
-            result={'tools':[{'name':name,'description':desc,'inputSchema':{'type':'object','properties':{k:({'type':v,'items':{'type':'string'}} if v=='array' else {'type':v}) for k,v in fields.items()},'required':[k for k in fields if not (name=='create_variant' and k=='base') and not (name=='recommend_case' and k=='index')],'additionalProperties':False}} for name,(desc,fields) in TOOLS.items()]}
+            result={'tools':[{'name':name,'description':desc,'inputSchema':{'type':'object','properties':{k:({'type':v,'items':{'type':'string'}} if v=='array' else {'type':v}) for k,v in fields.items()},'required':[k for k in fields if not (name=='create_variant' and k in ['base','description']) and not (name=='recommend_case' and k=='index')],'additionalProperties':False}} for name,(desc,fields) in TOOLS.items()]}
         elif method=='tools/call':
             name=params['name']; args=params.get('arguments',{})
             if name not in TOOLS: raise ValueError('Unknown tool')

@@ -2,7 +2,7 @@
 
 本地推荐实验系统：真实 MIND 数据、可训练的历史推荐模型、AGH 修改模型代码、独立评价。
 
-核心系统与网页分开运行。网页保留已有规则模拟原型，其展示指标尚未接入真实训练结果；真实 AGH 会话和模型实验通过 CLI/MCP 完成。网页接入和比赛展示将在核心验证完成后另行规划。
+核心系统与网页分开运行。主网页已接入真实 AGH 探索、训练状态、模型评分、新闻排名和推荐分配。原合成规则原型保留在 `/prototype`；比赛现场流程尚未制作。
 
 ## 核心系统
 
@@ -16,14 +16,14 @@ python -m feedverse.cli evaluate baseline
 python -m unittest discover -s tests/core -v
 ```
 
-## 网页原型运行
+## 真实网页运行
 
 ```bash
 npm install
-npm run dev
+npm run dev:full
 ```
 
-打开终端给出的本地网址，默认是 `http://127.0.0.1:5173/`。无需远端服务器、API key 或账号。字体随应用打包，运行时无需访问外部资源。
+打开终端给出的本地网址，默认是 `http://127.0.0.1:5173/`。无需远端服务器。新探索通过后台复用现有 TRAPI 身份，浏览器不持有模型凭据。字体随应用打包。完整使用和恢复方法见 [docs/web-workbench.md](docs/web-workbench.md)。
 
 ```bash
 npm test       # 可复现性、曝光守恒、指标定义和输入边界
@@ -31,7 +31,7 @@ npm run build # TypeScript 检查和生产构建
 npm run preview
 ```
 
-## 可以体验什么
+## 规则原型（/prototype）
 
 - 两个共享用户、创作者和随机事件的世界，以蓝色基线和橙色干预并排展示。
 - 点击创作者星图，比较其曝光、独立触达、点击和逐轮经历；可搜索全部创作者。

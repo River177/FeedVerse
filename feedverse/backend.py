@@ -13,6 +13,7 @@ CONFIG={'seed':42,'device':'cpu','batch_size':128,'epochs':5,'threads':6}
 class Backend:
     def __init__(self,root=DEFAULT_ROOT):
         self.root=Path(root).resolve(); self.root.mkdir(parents=True,exist_ok=True)
+        self.exploration=json.loads((self.root/'exploration-spec.json').read_text()) if (self.root/'exploration-spec.json').exists() else None
         self.public=self.root/'public'; self.frozen=self.root/'frozen'; self.variants=self.root/'variants'; self.variants.mkdir(exist_ok=True)
         with self.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, variant TEXT, identity TEXT, state TEXT, pid INTEGER, created REAL, finished REAL, error TEXT)')
@@ -43,18 +44,20 @@ class Backend:
         train=json.loads((self.public/'train.json').read_text()); valid=json.loads((self.public/'validation-input.json').read_text())
         import statistics
         return {'protocol':m['protocol'],'train':len(train),'validation':len(valid),'validation_cold_positives':m['cold_positive_counts']['validation'],'history_length_mean':statistics.mean(len(r['history']) for r in train),'candidate_length_mean':statistics.mean(len(r['candidates']) for r in valid),'features':'title, abstract, category, 128-dimensional training-fit TF-IDF/SVD; features.npz ids and vectors','model_contract':'build(public_path, config) returns torch.nn.Module with fit(rows, artifact_path), score(rows) -> scores aligned to candidates; rows: id,user,time,history,candidates; training also has positive','baseline_source':self.read_source('baseline')}
-    def create_variant(self,name,base='baseline'):
+    def create_variant(self,name,base='baseline',description=None):
+        if description is not None and (not isinstance(description,str) or len(description)>1000): raise ValueError('Invalid model description')
         p=self.path(name)
         if p.exists(): raise ValueError('Variant already exists')
         if name!='baseline':
             if (self.root/'selection.json').exists(): raise ValueError('Exploration already frozen')
-            if len([v for v in self.variants.iterdir() if v.name!='baseline'])>=3: raise ValueError('Three-candidate limit reached')
+            if self.exploration and name not in ['candidate_'+str(i+1) for i in range(self.exploration['candidate_limit'])]: raise ValueError('Candidate ID outside frozen exploration')
+            if len([v for v in self.variants.iterdir() if v.name!='baseline'])>=(self.exploration['candidate_limit'] if self.exploration else 3): raise ValueError('Three-candidate limit reached')
         source=PROJECT/'feedverse/model.py' if base is None else self.path(base)/'source/model.py'
         (p/'source').mkdir(parents=True); (p/'artifacts').mkdir()
         shutil.copyfile(source,p/'source/model.py'); shutil.copyfile(PROJECT/'feedverse/worker.py',p/'source/worker.py')
         dump(p/'artifacts/config.json',CONFIG)
         self.git(p,['init','-q']); self.git(p,['checkout','-q','-b','codex/'+name]); self.git(p,['add','source']); self.git(p,['-c','user.name=FeedVerse','-c','user.email=feedverse@localhost','commit','-qm','Initial model snapshot'])
-        dump(p/'variant.json',{'name':name,'base':base,'created':time.time()})
+        dump(p/'variant.json',{'name':name,'base':base,'created':time.time(),'description':description})
         return {'variant':name,'source':self.read_source(name)}
     def git(self,p,args): return subprocess.check_output(['git','-C',str(p),*args],text=True).strip()
     def read_source(self,variant): return (self.path(variant)/'source/model.py').read_text()
@@ -73,6 +76,7 @@ class Backend:
         p=self.path(variant)
         return {'variant':variant,'source_sha256':sha(p/'source/model.py'),'worker_sha256':sha(p/'source/worker.py'),'config_sha256':sha(p/'artifacts/config.json'),'data_manifest_sha256':self.check_data(),'source_commit':self.git(p,['rev-parse','HEAD'])}
     def train_variant(self,variant):
+        if variant=='baseline' and self.exploration: raise ValueError('Imported baseline is read-only; no retraining')
         p=self.path(variant); ident=self.identity(variant); identity=json.dumps(ident,sort_keys=True)
         with self.db() as db:
             prior=db.execute("SELECT * FROM jobs WHERE variant=? AND identity=? AND state IN ('queued','running','completed') ORDER BY created DESC LIMIT 1",(variant,identity)).fetchone()
@@ -156,6 +160,8 @@ class Backend:
             raise
     def _evaluate_variant(self,variant,split='validation'):
         if split not in ['validation','heldout']: raise ValueError('Invalid split')
+        if self.exploration and split!='validation': raise ValueError('Web explorations are validation-only')
+        if self.exploration and variant=='baseline': return json.loads((self.path('baseline')/'validation-evaluation.json').read_text())
         if split=='heldout':
             selection=json.loads((self.root/'selection.json').read_text())
             if variant not in ['baseline',selection['selected']]: raise ValueError('Only frozen baseline/selected model may use heldout')

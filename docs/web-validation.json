@@ -1,0 +1,175 @@
+{
+  "passed": true,
+  "experiment_id": "exp_fc779057748b4aa5",
+  "session_id": "agnes:local:local-dev:cli:workspace:acfae85eb8a9fad9",
+  "task": "MIND cold start, fixed seed42 20k/1k; validation-only web integration",
+  "candidate_count": 1,
+  "baseline_reused": true,
+  "new_training_attempts": 1,
+  "metrics": {
+    "baseline": {
+      "overall": {
+        "count": 1000,
+        "MRR": 0.12211409533808629,
+        "Recall@5": 0.153,
+        "NDCG@5": 0.09308238181934422,
+        "Recall@10": 0.292,
+        "NDCG@10": 0.13741217120327653,
+        "article_coverage": 0.293036750483559,
+        "exposure_hhi": 0.0187516
+      },
+      "cold": {
+        "count": 685,
+        "MRR": 0.052664932578480594,
+        "Recall@5": 0.017518248175182483,
+        "NDCG@5": 0.007198066982387392,
+        "Recall@10": 0.11678832116788321,
+        "NDCG@10": 0.038688147714808545,
+        "article_coverage": 0.30005672149744755,
+        "exposure_hhi": 0.019215387074431243
+      }
+    },
+    "candidate_1": {
+      "overall": {
+        "count": 1000,
+        "MRR": 0.2034827291007741,
+        "Recall@5": 0.29,
+        "NDCG@5": 0.18902735728296813,
+        "Recall@10": 0.457,
+        "NDCG@10": 0.24283082698623554,
+        "article_coverage": 0.4753384912959381,
+        "exposure_hhi": 0.00967754
+      },
+      "cold": {
+        "count": 685,
+        "MRR": 0.20494628329338585,
+        "Recall@5": 0.29781021897810217,
+        "NDCG@5": 0.19206857472011118,
+        "Recall@10": 0.4686131386861314,
+        "NDCG@10": 0.24724363052919945,
+        "article_coverage": 0.45377197958026094,
+        "exposure_hhi": 0.010652714582556342
+      }
+    }
+  },
+  "candidate_identity": {
+    "checkpoint_sha256": "8532eb3c2a2dd5dcd6d91714e6b564c220888b783c8447dfe0342346bb97c616",
+    "config_sha256": "06546ffbe7db479ee9a9ec66900f91866243b977204e9797390c3464c112ed59",
+    "data_manifest_sha256": "103b3365c6072bdb850697be943949679a0554b50178eee53676df475d570bb3",
+    "source_commit": "f6bd8078d3c93e17911130e8fe24d88043aadcd7",
+    "source_sha256": "2fdc563de882aaa68459c00f7bf95adcdf3225aef43bd2467887cbc148b56a9c",
+    "variant": "candidate_1",
+    "worker_sha256": "17b819419648a5b81e7fb5407cf3121d9674e2397c1c9cfe51939fcb72b08f75"
+  },
+  "selection": {
+    "selected": "candidate_1",
+    "criterion": "validation cold NDCG@10 strictly exceeds baseline; no overall-drop constraint",
+    "reports_sha256": {
+      "baseline": "c49f3ceafa57e60d0b60864d20eacea0e86e1dc184f3e2c3427c5cd84286a2de",
+      "candidate_1": "5340a0dcf9023b2fb212f951485bdf11997e5c660ffc2b7c0d703be768f70024"
+    },
+    "selected_identity": {
+      "checkpoint_sha256": "8532eb3c2a2dd5dcd6d91714e6b564c220888b783c8447dfe0342346bb97c616",
+      "config_sha256": "06546ffbe7db479ee9a9ec66900f91866243b977204e9797390c3464c112ed59",
+      "data_manifest_sha256": "103b3365c6072bdb850697be943949679a0554b50178eee53676df475d570bb3",
+      "source_commit": "f6bd8078d3c93e17911130e8fe24d88043aadcd7",
+      "source_sha256": "2fdc563de882aaa68459c00f7bf95adcdf3225aef43bd2467887cbc148b56a9c",
+      "variant": "candidate_1",
+      "worker_sha256": "17b819419648a5b81e7fb5407cf3121d9674e2397c1c9cfe51939fcb72b08f75"
+    },
+    "time": 1791688409.9950132
+  },
+  "usage": {
+    "requests": 13,
+    "confirmed_responses": 12,
+    "missing_usage_requests": 1,
+    "tokens": {
+      "input_tokens": 155030,
+      "output_tokens": 3182,
+      "total_tokens": 158212
+    },
+    "estimated_credits": {
+      "used": 0.241535,
+      "source": "estimated"
+    },
+    "cost": null
+  },
+  "independent_audit": {
+    "passed": true,
+    "experiment_id": "exp_fc779057748b4aa5",
+    "independent_metrics": {
+      "overall": {
+        "count": 1000,
+        "MRR": 0.20348272910077386,
+        "Recall@5": 0.29,
+        "Recall@10": 0.457,
+        "NDCG@5": 0.18902735728296777,
+        "NDCG@10": 0.2428308269862354,
+        "article_coverage": 0.4753384912959381,
+        "exposure_hhi": 0.00967754
+      },
+      "cold": {
+        "count": 685,
+        "MRR": 0.2049462832933861,
+        "Recall@5": 0.29781021897810217,
+        "Recall@10": 0.4686131386861314,
+        "NDCG@5": 0.19206857472011088,
+        "NDCG@10": 0.2472436305291992,
+        "article_coverage": 0.45377197958026094,
+        "exposure_hhi": 0.010652714582556342
+      }
+    },
+    "label_free_scores": true,
+    "agh_heldout_read_blocked": true,
+    "unknown_and_empty_history": true,
+    "no_new_heldout": true,
+    "historical_files_unchanged": 127,
+    "metrics_tolerance": 1e-12
+  },
+  "mcp_tool_counts": {
+    "inspect_dataset": 1,
+    "inspect_run": 1,
+    "read_source": 1,
+    "create_variant": 1,
+    "patch_source": 1,
+    "train_variant": 1,
+    "get_job_status": 3,
+    "evaluate_variant": 1,
+    "compare_runs": 1
+  },
+  "test_counts": {
+    "core": 7,
+    "web": 10,
+    "prototype": 4
+  },
+  "artifact_sha256": {
+    "sdk_events": "87da5ce8feaa5cb22607a447715ad5e0c92188300a79db54332fce16bf5c49a6",
+    "mcp_events": "c535124fffd8c07942bb4167f8ca3c4ed78a8c5eb91d70b58b3ac0fc7164a70b",
+    "bridge_audit": "bef365efe5d0286671ec1473c2e1f26a8b12439d7ba1c740ab17d06099b5c202",
+    "checkpoint": "8532eb3c2a2dd5dcd6d91714e6b564c220888b783c8447dfe0342346bb97c616",
+    "scores": "a365e545b76001555657250fb411cbd76a07da4d0811f177f88730ffd9956a8a"
+  },
+  "test_log_sha256": {
+    "web-tests.log": "547b16b104f9e1764b8fc09b5bb00bc2d2460b89111b774998614ba234242689",
+    "web-core-regression.log": "f6663aaed4c081358e5507e4f11c051cc7afff1b534c0c23f81e6f8676be36c7",
+    "web-prototype-tests.log": "23cf6e48556cf4a51ad951dcc1bee9c864b59ff0b6bde950e58906a383556eca",
+    "web-build.log": "e2a1a207bcedc2d3c6aa54105e5b51d82b7d78fe983dee398d266b4102e23ee2",
+    "dev-full-check.log": "56cf641ff2802b50ce40a9e660d282c0e60cd0ff2092ecc544e3b4daa8418259"
+  },
+  "real_failure": "Initial daemon startup hit short Unix socket directory sandbox denial; restored the same exploration after allowing only the exact owned short socket directory. No model requests or training had occurred before recovery.",
+  "controlled_failure_tests": "HTTP bridge upstream401 stops subsequent credential acquisition; upstream429 retains Retry-After. These are fixtures, not failures of the user account.",
+  "browser_checks": [
+    "Web form submitted one candidate",
+    "Refresh preserved exploration identity",
+    "Real history and ranking view",
+    "Distribution filters and article details",
+    "Read-only source diff and Escape closing",
+    "Narrow screen without horizontal document overflow"
+  ],
+  "limits": [
+    "Single candidate, one seed, weak ID baseline; no general AGH superiority claim",
+    "One request has no usage receipt and remains missing",
+    "No new heldout evaluation",
+    "Competition flow and presentation not implemented"
+  ]
+}

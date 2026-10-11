@@ -7,7 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "dev:full": "python3 scripts/dev.py"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
