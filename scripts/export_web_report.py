@@ -23,7 +23,7 @@ dump(PROJECT/'docs/web-validation.json',receipt)
 base=receipt['metrics']['baseline'];new=receipt['metrics']['candidate_1'];job=model['jobs'][0]
 text=f'''# FeedVerse 网页接入验收
 
-主网页已接通真实后台，旧合成规则演示移到 `/prototype`。网页可以创建探索、查看真实状态、源码、推荐案例、分配、用量及记录；支持取消、恢复、档案、脱敏导出与带明确标签的历史回放。
+主网页已接通真实后台，旧合成规则页面已删除。网页可以创建探索、查看真实状态、源码、推荐案例、分配、用量及记录；支持取消、恢复、档案、脱敏导出与带明确标签的历史回放。
 
 ## 真实网页执行
 

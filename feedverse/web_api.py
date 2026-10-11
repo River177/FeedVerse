@@ -3,7 +3,7 @@ import asyncio,json,os,time,uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI,HTTPException,Request,Query
-from fastapi.responses import StreamingResponse,FileResponse,JSONResponse
+from fastapi.responses import StreamingResponse,FileResponse,RedirectResponse,JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel,Field,ConfigDict
 from .backend import PROJECT
@@ -111,11 +111,12 @@ def create_app(store=None,launcher=launch):
             items+=chunk;after=chunk[-1]['seq']
         value={'product':'FeedVerse','snapshot':snapshot,'events':items,'exported_at':time.time()}
         return JSONResponse(redact(value),headers={'Content-Disposition':f'attachment; filename="feedverse-{eid}.json"'})
-    # Keep static assets separate from /api; SPA fallback serves both the real app and /prototype.
+    # Keep static assets separate from /api; the SPA serves the real workbench.
     dist=PROJECT/'dist'
     if (dist/'assets').exists():app.mount('/assets',StaticFiles(directory=dist/'assets'),name='assets')
     @app.get('/{path:path}')
     def spa(path:str):
+        if path.rstrip('/')=='prototype':return RedirectResponse('/',status_code=307)
         if path.startswith('api/'):raise HTTPException(404,'Unknown API route')
         if (dist/'index.html').exists():return FileResponse(dist/'index.html')
         raise HTTPException(503,'Run the Vite development server or npm run build')

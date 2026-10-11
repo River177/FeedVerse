@@ -1,6 +1,6 @@
 # FeedVerse 真实实验工作台
 
-主页面读取真实 MIND 模型和执行产物，浏览器不连接 TRAPI/MCP。旧的合成规则模拟在 `/prototype`，与真实数据和实验状态分开。
+主页面读取真实 MIND 模型和执行产物，浏览器不连接 TRAPI/MCP。旧合成规则页面已删除，旧地址会返回真实实验工作台。
 
 ## 启动与使用
 
@@ -13,7 +13,7 @@ npm run dev:full
 
 默认网页 http://127.0.0.1:5173/，API http://127.0.0.1:18779。脚本优先使用 FEEDVERSE_PYTHON 指定的解释器，其次查找项目虚拟环境、本机 miniforge3 和当前解释器。启动时实际验证沙箱。已有同项目 API/Vite 可复用；退出只终止本启动器创建的服务。若本启动器创建了 API，Ctrl-C 会先请求取消当前探索，等待独立 manager 释放 AGH/bridge/MCP，再停止 API。
 
-生产本地使用：`npm run build`，再运行 `python -m uvicorn feedverse.web_api:app --host 127.0.0.1 --port 18779`。API 同时服务构建后的网页和 `/prototype`。原始 MIND 和 local/core 的冻结基线须已准备；原有核心 CLI 仍可使用。
+生产本地使用：`npm run build`，再运行 `python -m uvicorn feedverse.web_api:app --host 127.0.0.1 --port 18779`。API 同时服务构建后的真实工作台。原始 MIND 和 local/core 的冻结基线须已准备；原有核心 CLI 仍可使用。
 
 默认打开已核验历史实验，比较 baseline 和 attention_content。新建探索可填写方向并选择 1–3 个候选，默认 3；同时只能执行一个探索。方向不能覆盖数据、seed42、CPU、batch128、5 epoch、最多4负例或评价边界。点击已有效候选可切换比较模型；源码和差异为只读。
 

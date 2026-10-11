@@ -1,0 +1,65 @@
+:root {
+  font-family:
+    "DM Sans Variable",
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  color: #344139;
+  background: #f4f5f3;
+  font-synthesis: none;
+  --accent: #375b4b;
+  --muted: #78817b;
+  --border: #dce2dc;
+  --blue: #5579a7;
+  --orange: #b88051;
+  --green: #427d62;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+button svg {
+  flex-shrink: 0;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #628472;
+  outline-offset: 3px;
+}
+::selection {
+  background: #d8e6dc;
+}
+button {
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
